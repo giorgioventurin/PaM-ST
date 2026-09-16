@@ -1,0 +1,1902 @@
+{
+  "seed": 37,
+  "coordinate_units": "arbitrary synthetic units",
+  "recommended_options": {
+    "k": 10,
+    "max_radius": 20,
+    "min_types": 2,
+    "max_dominance": 0.7,
+    "max_relabels": 1,
+    "min_support": 5,
+    "null": "global",
+    "permutations": 199,
+    "region_size": 80,
+    "contact_radius": 8
+  },
+  "interpretation": [
+    "The random-label control is one realization; statistical calibration requires repeated independently generated datasets.",
+    "Homotypic blobs should yield no eligible observed motifs with the recommended physical cutoff.",
+    "Boundary motifs in adjacent domains may be significant under random labeling; that does not establish intermingling or a higher-order interaction.",
+    "Planted groups are separated by 80 units; each includes exactly ten cells with diameter below 16 units.",
+    "A template near the planted composition may also match background groups; compare membership with the planted truth before estimating recovery."
+  ],
+  "datasets": {
+    "random_labels": {
+      "file": "random_labels.csv",
+      "description": "Independent uniform labels on isolated ten-cell clusters: a random-label negative control.",
+      "cells": 1800,
+      "samples": [
+        "sample_01",
+        "sample_02",
+        "sample_03"
+      ],
+      "type_counts": {
+        "A": 291,
+        "B": 327,
+        "C": 341,
+        "D": 278,
+        "E": 283,
+        "F": 280
+      },
+      "planted_occurrences": []
+    },
+    "homotypic_blobs": {
+      "file": "homotypic_blobs.csv",
+      "description": "Each isolated ten-cell cluster has one type: strong homotypic organization that fails mixed-type eligibility.",
+      "cells": 1800,
+      "samples": [
+        "sample_01",
+        "sample_02",
+        "sample_03"
+      ],
+      "type_counts": {
+        "A": 300,
+        "B": 300,
+        "C": 300,
+        "D": 300,
+        "E": 300,
+        "F": 300
+      },
+      "planted_occurrences": []
+    },
+    "adjacent_domains": {
+      "file": "adjacent_domains.csv",
+      "description": "Six touching single-type domains on a jittered lattice: mixed groups describe boundaries without proving intermingling.",
+      "cells": 1800,
+      "samples": [
+        "sample_01",
+        "sample_02",
+        "sample_03"
+      ],
+      "type_counts": {
+        "A": 300,
+        "B": 300,
+        "C": 300,
+        "D": 300,
+        "E": 300,
+        "F": 300
+      },
+      "planted_occurrences": []
+    },
+    "planted_mixed": {
+      "file": "planted_mixed.csv",
+      "description": "Repeated isolated 4A+3B+3C groups, with independent six-type background clusters; three samples by default.",
+      "cells": 1800,
+      "samples": [
+        "sample_01",
+        "sample_02",
+        "sample_03"
+      ],
+      "type_counts": {
+        "A": 451,
+        "B": 388,
+        "C": 384,
+        "D": 211,
+        "E": 171,
+        "F": 195
+      },
+      "planted_occurrences": [
+        {
+          "sample": "sample_01",
+          "group": 2,
+          "center": [
+            110.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g002_c01",
+            "sample_01_g002_c02",
+            "sample_01_g002_c03",
+            "sample_01_g002_c04",
+            "sample_01_g002_c05",
+            "sample_01_g002_c06",
+            "sample_01_g002_c07",
+            "sample_01_g002_c08",
+            "sample_01_g002_c09",
+            "sample_01_g002_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 5,
+          "center": [
+            350.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g005_c01",
+            "sample_01_g005_c02",
+            "sample_01_g005_c03",
+            "sample_01_g005_c04",
+            "sample_01_g005_c05",
+            "sample_01_g005_c06",
+            "sample_01_g005_c07",
+            "sample_01_g005_c08",
+            "sample_01_g005_c09",
+            "sample_01_g005_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 6,
+          "center": [
+            430.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g006_c01",
+            "sample_01_g006_c02",
+            "sample_01_g006_c03",
+            "sample_01_g006_c04",
+            "sample_01_g006_c05",
+            "sample_01_g006_c06",
+            "sample_01_g006_c07",
+            "sample_01_g006_c08",
+            "sample_01_g006_c09",
+            "sample_01_g006_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 8,
+          "center": [
+            590.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g008_c01",
+            "sample_01_g008_c02",
+            "sample_01_g008_c03",
+            "sample_01_g008_c04",
+            "sample_01_g008_c05",
+            "sample_01_g008_c06",
+            "sample_01_g008_c07",
+            "sample_01_g008_c08",
+            "sample_01_g008_c09",
+            "sample_01_g008_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 11,
+          "center": [
+            190.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g011_c01",
+            "sample_01_g011_c02",
+            "sample_01_g011_c03",
+            "sample_01_g011_c04",
+            "sample_01_g011_c05",
+            "sample_01_g011_c06",
+            "sample_01_g011_c07",
+            "sample_01_g011_c08",
+            "sample_01_g011_c09",
+            "sample_01_g011_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 12,
+          "center": [
+            270.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g012_c01",
+            "sample_01_g012_c02",
+            "sample_01_g012_c03",
+            "sample_01_g012_c04",
+            "sample_01_g012_c05",
+            "sample_01_g012_c06",
+            "sample_01_g012_c07",
+            "sample_01_g012_c08",
+            "sample_01_g012_c09",
+            "sample_01_g012_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 13,
+          "center": [
+            350.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g013_c01",
+            "sample_01_g013_c02",
+            "sample_01_g013_c03",
+            "sample_01_g013_c04",
+            "sample_01_g013_c05",
+            "sample_01_g013_c06",
+            "sample_01_g013_c07",
+            "sample_01_g013_c08",
+            "sample_01_g013_c09",
+            "sample_01_g013_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 15,
+          "center": [
+            510.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g015_c01",
+            "sample_01_g015_c02",
+            "sample_01_g015_c03",
+            "sample_01_g015_c04",
+            "sample_01_g015_c05",
+            "sample_01_g015_c06",
+            "sample_01_g015_c07",
+            "sample_01_g015_c08",
+            "sample_01_g015_c09",
+            "sample_01_g015_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 18,
+          "center": [
+            110.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g018_c01",
+            "sample_01_g018_c02",
+            "sample_01_g018_c03",
+            "sample_01_g018_c04",
+            "sample_01_g018_c05",
+            "sample_01_g018_c06",
+            "sample_01_g018_c07",
+            "sample_01_g018_c08",
+            "sample_01_g018_c09",
+            "sample_01_g018_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 19,
+          "center": [
+            190.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g019_c01",
+            "sample_01_g019_c02",
+            "sample_01_g019_c03",
+            "sample_01_g019_c04",
+            "sample_01_g019_c05",
+            "sample_01_g019_c06",
+            "sample_01_g019_c07",
+            "sample_01_g019_c08",
+            "sample_01_g019_c09",
+            "sample_01_g019_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 25,
+          "center": [
+            30.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g025_c01",
+            "sample_01_g025_c02",
+            "sample_01_g025_c03",
+            "sample_01_g025_c04",
+            "sample_01_g025_c05",
+            "sample_01_g025_c06",
+            "sample_01_g025_c07",
+            "sample_01_g025_c08",
+            "sample_01_g025_c09",
+            "sample_01_g025_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 31,
+          "center": [
+            510.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g031_c01",
+            "sample_01_g031_c02",
+            "sample_01_g031_c03",
+            "sample_01_g031_c04",
+            "sample_01_g031_c05",
+            "sample_01_g031_c06",
+            "sample_01_g031_c07",
+            "sample_01_g031_c08",
+            "sample_01_g031_c09",
+            "sample_01_g031_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 32,
+          "center": [
+            590.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g032_c01",
+            "sample_01_g032_c02",
+            "sample_01_g032_c03",
+            "sample_01_g032_c04",
+            "sample_01_g032_c05",
+            "sample_01_g032_c06",
+            "sample_01_g032_c07",
+            "sample_01_g032_c08",
+            "sample_01_g032_c09",
+            "sample_01_g032_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 35,
+          "center": [
+            190.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g035_c01",
+            "sample_01_g035_c02",
+            "sample_01_g035_c03",
+            "sample_01_g035_c04",
+            "sample_01_g035_c05",
+            "sample_01_g035_c06",
+            "sample_01_g035_c07",
+            "sample_01_g035_c08",
+            "sample_01_g035_c09",
+            "sample_01_g035_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 36,
+          "center": [
+            270.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g036_c01",
+            "sample_01_g036_c02",
+            "sample_01_g036_c03",
+            "sample_01_g036_c04",
+            "sample_01_g036_c05",
+            "sample_01_g036_c06",
+            "sample_01_g036_c07",
+            "sample_01_g036_c08",
+            "sample_01_g036_c09",
+            "sample_01_g036_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 37,
+          "center": [
+            350.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g037_c01",
+            "sample_01_g037_c02",
+            "sample_01_g037_c03",
+            "sample_01_g037_c04",
+            "sample_01_g037_c05",
+            "sample_01_g037_c06",
+            "sample_01_g037_c07",
+            "sample_01_g037_c08",
+            "sample_01_g037_c09",
+            "sample_01_g037_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 38,
+          "center": [
+            430.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g038_c01",
+            "sample_01_g038_c02",
+            "sample_01_g038_c03",
+            "sample_01_g038_c04",
+            "sample_01_g038_c05",
+            "sample_01_g038_c06",
+            "sample_01_g038_c07",
+            "sample_01_g038_c08",
+            "sample_01_g038_c09",
+            "sample_01_g038_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 39,
+          "center": [
+            510.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g039_c01",
+            "sample_01_g039_c02",
+            "sample_01_g039_c03",
+            "sample_01_g039_c04",
+            "sample_01_g039_c05",
+            "sample_01_g039_c06",
+            "sample_01_g039_c07",
+            "sample_01_g039_c08",
+            "sample_01_g039_c09",
+            "sample_01_g039_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 43,
+          "center": [
+            190.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g043_c01",
+            "sample_01_g043_c02",
+            "sample_01_g043_c03",
+            "sample_01_g043_c04",
+            "sample_01_g043_c05",
+            "sample_01_g043_c06",
+            "sample_01_g043_c07",
+            "sample_01_g043_c08",
+            "sample_01_g043_c09",
+            "sample_01_g043_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 45,
+          "center": [
+            350.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g045_c01",
+            "sample_01_g045_c02",
+            "sample_01_g045_c03",
+            "sample_01_g045_c04",
+            "sample_01_g045_c05",
+            "sample_01_g045_c06",
+            "sample_01_g045_c07",
+            "sample_01_g045_c08",
+            "sample_01_g045_c09",
+            "sample_01_g045_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 47,
+          "center": [
+            510.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g047_c01",
+            "sample_01_g047_c02",
+            "sample_01_g047_c03",
+            "sample_01_g047_c04",
+            "sample_01_g047_c05",
+            "sample_01_g047_c06",
+            "sample_01_g047_c07",
+            "sample_01_g047_c08",
+            "sample_01_g047_c09",
+            "sample_01_g047_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 49,
+          "center": [
+            30.0,
+            510.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g049_c01",
+            "sample_01_g049_c02",
+            "sample_01_g049_c03",
+            "sample_01_g049_c04",
+            "sample_01_g049_c05",
+            "sample_01_g049_c06",
+            "sample_01_g049_c07",
+            "sample_01_g049_c08",
+            "sample_01_g049_c09",
+            "sample_01_g049_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 53,
+          "center": [
+            350.0,
+            510.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g053_c01",
+            "sample_01_g053_c02",
+            "sample_01_g053_c03",
+            "sample_01_g053_c04",
+            "sample_01_g053_c05",
+            "sample_01_g053_c06",
+            "sample_01_g053_c07",
+            "sample_01_g053_c08",
+            "sample_01_g053_c09",
+            "sample_01_g053_c10"
+          ]
+        },
+        {
+          "sample": "sample_01",
+          "group": 54,
+          "center": [
+            430.0,
+            510.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_01_g054_c01",
+            "sample_01_g054_c02",
+            "sample_01_g054_c03",
+            "sample_01_g054_c04",
+            "sample_01_g054_c05",
+            "sample_01_g054_c06",
+            "sample_01_g054_c07",
+            "sample_01_g054_c08",
+            "sample_01_g054_c09",
+            "sample_01_g054_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 1,
+          "center": [
+            30.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g001_c01",
+            "sample_02_g001_c02",
+            "sample_02_g001_c03",
+            "sample_02_g001_c04",
+            "sample_02_g001_c05",
+            "sample_02_g001_c06",
+            "sample_02_g001_c07",
+            "sample_02_g001_c08",
+            "sample_02_g001_c09",
+            "sample_02_g001_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 2,
+          "center": [
+            110.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g002_c01",
+            "sample_02_g002_c02",
+            "sample_02_g002_c03",
+            "sample_02_g002_c04",
+            "sample_02_g002_c05",
+            "sample_02_g002_c06",
+            "sample_02_g002_c07",
+            "sample_02_g002_c08",
+            "sample_02_g002_c09",
+            "sample_02_g002_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 4,
+          "center": [
+            270.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g004_c01",
+            "sample_02_g004_c02",
+            "sample_02_g004_c03",
+            "sample_02_g004_c04",
+            "sample_02_g004_c05",
+            "sample_02_g004_c06",
+            "sample_02_g004_c07",
+            "sample_02_g004_c08",
+            "sample_02_g004_c09",
+            "sample_02_g004_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 5,
+          "center": [
+            350.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g005_c01",
+            "sample_02_g005_c02",
+            "sample_02_g005_c03",
+            "sample_02_g005_c04",
+            "sample_02_g005_c05",
+            "sample_02_g005_c06",
+            "sample_02_g005_c07",
+            "sample_02_g005_c08",
+            "sample_02_g005_c09",
+            "sample_02_g005_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 10,
+          "center": [
+            110.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g010_c01",
+            "sample_02_g010_c02",
+            "sample_02_g010_c03",
+            "sample_02_g010_c04",
+            "sample_02_g010_c05",
+            "sample_02_g010_c06",
+            "sample_02_g010_c07",
+            "sample_02_g010_c08",
+            "sample_02_g010_c09",
+            "sample_02_g010_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 11,
+          "center": [
+            190.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g011_c01",
+            "sample_02_g011_c02",
+            "sample_02_g011_c03",
+            "sample_02_g011_c04",
+            "sample_02_g011_c05",
+            "sample_02_g011_c06",
+            "sample_02_g011_c07",
+            "sample_02_g011_c08",
+            "sample_02_g011_c09",
+            "sample_02_g011_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 17,
+          "center": [
+            30.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g017_c01",
+            "sample_02_g017_c02",
+            "sample_02_g017_c03",
+            "sample_02_g017_c04",
+            "sample_02_g017_c05",
+            "sample_02_g017_c06",
+            "sample_02_g017_c07",
+            "sample_02_g017_c08",
+            "sample_02_g017_c09",
+            "sample_02_g017_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 18,
+          "center": [
+            110.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g018_c01",
+            "sample_02_g018_c02",
+            "sample_02_g018_c03",
+            "sample_02_g018_c04",
+            "sample_02_g018_c05",
+            "sample_02_g018_c06",
+            "sample_02_g018_c07",
+            "sample_02_g018_c08",
+            "sample_02_g018_c09",
+            "sample_02_g018_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 19,
+          "center": [
+            190.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g019_c01",
+            "sample_02_g019_c02",
+            "sample_02_g019_c03",
+            "sample_02_g019_c04",
+            "sample_02_g019_c05",
+            "sample_02_g019_c06",
+            "sample_02_g019_c07",
+            "sample_02_g019_c08",
+            "sample_02_g019_c09",
+            "sample_02_g019_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 20,
+          "center": [
+            270.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g020_c01",
+            "sample_02_g020_c02",
+            "sample_02_g020_c03",
+            "sample_02_g020_c04",
+            "sample_02_g020_c05",
+            "sample_02_g020_c06",
+            "sample_02_g020_c07",
+            "sample_02_g020_c08",
+            "sample_02_g020_c09",
+            "sample_02_g020_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 21,
+          "center": [
+            350.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g021_c01",
+            "sample_02_g021_c02",
+            "sample_02_g021_c03",
+            "sample_02_g021_c04",
+            "sample_02_g021_c05",
+            "sample_02_g021_c06",
+            "sample_02_g021_c07",
+            "sample_02_g021_c08",
+            "sample_02_g021_c09",
+            "sample_02_g021_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 22,
+          "center": [
+            430.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g022_c01",
+            "sample_02_g022_c02",
+            "sample_02_g022_c03",
+            "sample_02_g022_c04",
+            "sample_02_g022_c05",
+            "sample_02_g022_c06",
+            "sample_02_g022_c07",
+            "sample_02_g022_c08",
+            "sample_02_g022_c09",
+            "sample_02_g022_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 24,
+          "center": [
+            590.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g024_c01",
+            "sample_02_g024_c02",
+            "sample_02_g024_c03",
+            "sample_02_g024_c04",
+            "sample_02_g024_c05",
+            "sample_02_g024_c06",
+            "sample_02_g024_c07",
+            "sample_02_g024_c08",
+            "sample_02_g024_c09",
+            "sample_02_g024_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 28,
+          "center": [
+            270.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g028_c01",
+            "sample_02_g028_c02",
+            "sample_02_g028_c03",
+            "sample_02_g028_c04",
+            "sample_02_g028_c05",
+            "sample_02_g028_c06",
+            "sample_02_g028_c07",
+            "sample_02_g028_c08",
+            "sample_02_g028_c09",
+            "sample_02_g028_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 32,
+          "center": [
+            590.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g032_c01",
+            "sample_02_g032_c02",
+            "sample_02_g032_c03",
+            "sample_02_g032_c04",
+            "sample_02_g032_c05",
+            "sample_02_g032_c06",
+            "sample_02_g032_c07",
+            "sample_02_g032_c08",
+            "sample_02_g032_c09",
+            "sample_02_g032_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 33,
+          "center": [
+            30.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g033_c01",
+            "sample_02_g033_c02",
+            "sample_02_g033_c03",
+            "sample_02_g033_c04",
+            "sample_02_g033_c05",
+            "sample_02_g033_c06",
+            "sample_02_g033_c07",
+            "sample_02_g033_c08",
+            "sample_02_g033_c09",
+            "sample_02_g033_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 36,
+          "center": [
+            270.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g036_c01",
+            "sample_02_g036_c02",
+            "sample_02_g036_c03",
+            "sample_02_g036_c04",
+            "sample_02_g036_c05",
+            "sample_02_g036_c06",
+            "sample_02_g036_c07",
+            "sample_02_g036_c08",
+            "sample_02_g036_c09",
+            "sample_02_g036_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 37,
+          "center": [
+            350.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g037_c01",
+            "sample_02_g037_c02",
+            "sample_02_g037_c03",
+            "sample_02_g037_c04",
+            "sample_02_g037_c05",
+            "sample_02_g037_c06",
+            "sample_02_g037_c07",
+            "sample_02_g037_c08",
+            "sample_02_g037_c09",
+            "sample_02_g037_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 40,
+          "center": [
+            590.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g040_c01",
+            "sample_02_g040_c02",
+            "sample_02_g040_c03",
+            "sample_02_g040_c04",
+            "sample_02_g040_c05",
+            "sample_02_g040_c06",
+            "sample_02_g040_c07",
+            "sample_02_g040_c08",
+            "sample_02_g040_c09",
+            "sample_02_g040_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 44,
+          "center": [
+            270.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g044_c01",
+            "sample_02_g044_c02",
+            "sample_02_g044_c03",
+            "sample_02_g044_c04",
+            "sample_02_g044_c05",
+            "sample_02_g044_c06",
+            "sample_02_g044_c07",
+            "sample_02_g044_c08",
+            "sample_02_g044_c09",
+            "sample_02_g044_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 48,
+          "center": [
+            590.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g048_c01",
+            "sample_02_g048_c02",
+            "sample_02_g048_c03",
+            "sample_02_g048_c04",
+            "sample_02_g048_c05",
+            "sample_02_g048_c06",
+            "sample_02_g048_c07",
+            "sample_02_g048_c08",
+            "sample_02_g048_c09",
+            "sample_02_g048_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 50,
+          "center": [
+            110.0,
+            510.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g050_c01",
+            "sample_02_g050_c02",
+            "sample_02_g050_c03",
+            "sample_02_g050_c04",
+            "sample_02_g050_c05",
+            "sample_02_g050_c06",
+            "sample_02_g050_c07",
+            "sample_02_g050_c08",
+            "sample_02_g050_c09",
+            "sample_02_g050_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 58,
+          "center": [
+            110.0,
+            590.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g058_c01",
+            "sample_02_g058_c02",
+            "sample_02_g058_c03",
+            "sample_02_g058_c04",
+            "sample_02_g058_c05",
+            "sample_02_g058_c06",
+            "sample_02_g058_c07",
+            "sample_02_g058_c08",
+            "sample_02_g058_c09",
+            "sample_02_g058_c10"
+          ]
+        },
+        {
+          "sample": "sample_02",
+          "group": 59,
+          "center": [
+            190.0,
+            590.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_02_g059_c01",
+            "sample_02_g059_c02",
+            "sample_02_g059_c03",
+            "sample_02_g059_c04",
+            "sample_02_g059_c05",
+            "sample_02_g059_c06",
+            "sample_02_g059_c07",
+            "sample_02_g059_c08",
+            "sample_02_g059_c09",
+            "sample_02_g059_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 3,
+          "center": [
+            190.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g003_c01",
+            "sample_03_g003_c02",
+            "sample_03_g003_c03",
+            "sample_03_g003_c04",
+            "sample_03_g003_c05",
+            "sample_03_g003_c06",
+            "sample_03_g003_c07",
+            "sample_03_g003_c08",
+            "sample_03_g003_c09",
+            "sample_03_g003_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 5,
+          "center": [
+            350.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g005_c01",
+            "sample_03_g005_c02",
+            "sample_03_g005_c03",
+            "sample_03_g005_c04",
+            "sample_03_g005_c05",
+            "sample_03_g005_c06",
+            "sample_03_g005_c07",
+            "sample_03_g005_c08",
+            "sample_03_g005_c09",
+            "sample_03_g005_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 8,
+          "center": [
+            590.0,
+            30.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g008_c01",
+            "sample_03_g008_c02",
+            "sample_03_g008_c03",
+            "sample_03_g008_c04",
+            "sample_03_g008_c05",
+            "sample_03_g008_c06",
+            "sample_03_g008_c07",
+            "sample_03_g008_c08",
+            "sample_03_g008_c09",
+            "sample_03_g008_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 9,
+          "center": [
+            30.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g009_c01",
+            "sample_03_g009_c02",
+            "sample_03_g009_c03",
+            "sample_03_g009_c04",
+            "sample_03_g009_c05",
+            "sample_03_g009_c06",
+            "sample_03_g009_c07",
+            "sample_03_g009_c08",
+            "sample_03_g009_c09",
+            "sample_03_g009_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 13,
+          "center": [
+            350.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g013_c01",
+            "sample_03_g013_c02",
+            "sample_03_g013_c03",
+            "sample_03_g013_c04",
+            "sample_03_g013_c05",
+            "sample_03_g013_c06",
+            "sample_03_g013_c07",
+            "sample_03_g013_c08",
+            "sample_03_g013_c09",
+            "sample_03_g013_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 14,
+          "center": [
+            430.0,
+            110.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g014_c01",
+            "sample_03_g014_c02",
+            "sample_03_g014_c03",
+            "sample_03_g014_c04",
+            "sample_03_g014_c05",
+            "sample_03_g014_c06",
+            "sample_03_g014_c07",
+            "sample_03_g014_c08",
+            "sample_03_g014_c09",
+            "sample_03_g014_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 19,
+          "center": [
+            190.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g019_c01",
+            "sample_03_g019_c02",
+            "sample_03_g019_c03",
+            "sample_03_g019_c04",
+            "sample_03_g019_c05",
+            "sample_03_g019_c06",
+            "sample_03_g019_c07",
+            "sample_03_g019_c08",
+            "sample_03_g019_c09",
+            "sample_03_g019_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 23,
+          "center": [
+            510.0,
+            190.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g023_c01",
+            "sample_03_g023_c02",
+            "sample_03_g023_c03",
+            "sample_03_g023_c04",
+            "sample_03_g023_c05",
+            "sample_03_g023_c06",
+            "sample_03_g023_c07",
+            "sample_03_g023_c08",
+            "sample_03_g023_c09",
+            "sample_03_g023_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 25,
+          "center": [
+            30.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g025_c01",
+            "sample_03_g025_c02",
+            "sample_03_g025_c03",
+            "sample_03_g025_c04",
+            "sample_03_g025_c05",
+            "sample_03_g025_c06",
+            "sample_03_g025_c07",
+            "sample_03_g025_c08",
+            "sample_03_g025_c09",
+            "sample_03_g025_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 26,
+          "center": [
+            110.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g026_c01",
+            "sample_03_g026_c02",
+            "sample_03_g026_c03",
+            "sample_03_g026_c04",
+            "sample_03_g026_c05",
+            "sample_03_g026_c06",
+            "sample_03_g026_c07",
+            "sample_03_g026_c08",
+            "sample_03_g026_c09",
+            "sample_03_g026_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 28,
+          "center": [
+            270.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g028_c01",
+            "sample_03_g028_c02",
+            "sample_03_g028_c03",
+            "sample_03_g028_c04",
+            "sample_03_g028_c05",
+            "sample_03_g028_c06",
+            "sample_03_g028_c07",
+            "sample_03_g028_c08",
+            "sample_03_g028_c09",
+            "sample_03_g028_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 29,
+          "center": [
+            350.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g029_c01",
+            "sample_03_g029_c02",
+            "sample_03_g029_c03",
+            "sample_03_g029_c04",
+            "sample_03_g029_c05",
+            "sample_03_g029_c06",
+            "sample_03_g029_c07",
+            "sample_03_g029_c08",
+            "sample_03_g029_c09",
+            "sample_03_g029_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 30,
+          "center": [
+            430.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g030_c01",
+            "sample_03_g030_c02",
+            "sample_03_g030_c03",
+            "sample_03_g030_c04",
+            "sample_03_g030_c05",
+            "sample_03_g030_c06",
+            "sample_03_g030_c07",
+            "sample_03_g030_c08",
+            "sample_03_g030_c09",
+            "sample_03_g030_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 31,
+          "center": [
+            510.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g031_c01",
+            "sample_03_g031_c02",
+            "sample_03_g031_c03",
+            "sample_03_g031_c04",
+            "sample_03_g031_c05",
+            "sample_03_g031_c06",
+            "sample_03_g031_c07",
+            "sample_03_g031_c08",
+            "sample_03_g031_c09",
+            "sample_03_g031_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 32,
+          "center": [
+            590.0,
+            270.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g032_c01",
+            "sample_03_g032_c02",
+            "sample_03_g032_c03",
+            "sample_03_g032_c04",
+            "sample_03_g032_c05",
+            "sample_03_g032_c06",
+            "sample_03_g032_c07",
+            "sample_03_g032_c08",
+            "sample_03_g032_c09",
+            "sample_03_g032_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 34,
+          "center": [
+            110.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g034_c01",
+            "sample_03_g034_c02",
+            "sample_03_g034_c03",
+            "sample_03_g034_c04",
+            "sample_03_g034_c05",
+            "sample_03_g034_c06",
+            "sample_03_g034_c07",
+            "sample_03_g034_c08",
+            "sample_03_g034_c09",
+            "sample_03_g034_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 37,
+          "center": [
+            350.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g037_c01",
+            "sample_03_g037_c02",
+            "sample_03_g037_c03",
+            "sample_03_g037_c04",
+            "sample_03_g037_c05",
+            "sample_03_g037_c06",
+            "sample_03_g037_c07",
+            "sample_03_g037_c08",
+            "sample_03_g037_c09",
+            "sample_03_g037_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 38,
+          "center": [
+            430.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g038_c01",
+            "sample_03_g038_c02",
+            "sample_03_g038_c03",
+            "sample_03_g038_c04",
+            "sample_03_g038_c05",
+            "sample_03_g038_c06",
+            "sample_03_g038_c07",
+            "sample_03_g038_c08",
+            "sample_03_g038_c09",
+            "sample_03_g038_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 39,
+          "center": [
+            510.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g039_c01",
+            "sample_03_g039_c02",
+            "sample_03_g039_c03",
+            "sample_03_g039_c04",
+            "sample_03_g039_c05",
+            "sample_03_g039_c06",
+            "sample_03_g039_c07",
+            "sample_03_g039_c08",
+            "sample_03_g039_c09",
+            "sample_03_g039_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 40,
+          "center": [
+            590.0,
+            350.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g040_c01",
+            "sample_03_g040_c02",
+            "sample_03_g040_c03",
+            "sample_03_g040_c04",
+            "sample_03_g040_c05",
+            "sample_03_g040_c06",
+            "sample_03_g040_c07",
+            "sample_03_g040_c08",
+            "sample_03_g040_c09",
+            "sample_03_g040_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 41,
+          "center": [
+            30.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g041_c01",
+            "sample_03_g041_c02",
+            "sample_03_g041_c03",
+            "sample_03_g041_c04",
+            "sample_03_g041_c05",
+            "sample_03_g041_c06",
+            "sample_03_g041_c07",
+            "sample_03_g041_c08",
+            "sample_03_g041_c09",
+            "sample_03_g041_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 45,
+          "center": [
+            350.0,
+            430.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g045_c01",
+            "sample_03_g045_c02",
+            "sample_03_g045_c03",
+            "sample_03_g045_c04",
+            "sample_03_g045_c05",
+            "sample_03_g045_c06",
+            "sample_03_g045_c07",
+            "sample_03_g045_c08",
+            "sample_03_g045_c09",
+            "sample_03_g045_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 56,
+          "center": [
+            590.0,
+            510.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g056_c01",
+            "sample_03_g056_c02",
+            "sample_03_g056_c03",
+            "sample_03_g056_c04",
+            "sample_03_g056_c05",
+            "sample_03_g056_c06",
+            "sample_03_g056_c07",
+            "sample_03_g056_c08",
+            "sample_03_g056_c09",
+            "sample_03_g056_c10"
+          ]
+        },
+        {
+          "sample": "sample_03",
+          "group": 58,
+          "center": [
+            110.0,
+            590.0
+          ],
+          "composition": {
+            "A": 4,
+            "B": 3,
+            "C": 3
+          },
+          "member_ids": [
+            "sample_03_g058_c01",
+            "sample_03_g058_c02",
+            "sample_03_g058_c03",
+            "sample_03_g058_c04",
+            "sample_03_g058_c05",
+            "sample_03_g058_c06",
+            "sample_03_g058_c07",
+            "sample_03_g058_c08",
+            "sample_03_g058_c09",
+            "sample_03_g058_c10"
+          ]
+        }
+      ]
+    }
+  }
+}

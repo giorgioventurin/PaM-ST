@@ -1,0 +1,30 @@
+# Build trees
+build/
+build-block/
+build-native/
+cmake-build-*/
+mixed_motifs/build/
+
+# Analysis outputs and scratch (large, and regenerable from the inputs)
+output/
+output_tmp/
+plots/
+tmp/
+mixed_motifs/results/
+mixed_motifs/examples/results/
+
+# Validation working files
+dev/pam_st
+dev/pam_st_*
+dev/.venv/
+dev/data/
+dev/golden/
+dev/candidate/
+dev/fwer_out/
+dev/power_out/
+
+# Editor and OS
+.idea/
+.DS_Store
+__pycache__/
+*.pyc
