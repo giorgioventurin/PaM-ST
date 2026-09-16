@@ -10,6 +10,13 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Pin the optimisation level rather than relying on the compiler defaults CMake
+# happens to supply. Debug and RelWithDebInfo keep their own levels, so a
+# debugger or a sanitizer build still behaves.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG" CACHE STRING "Release flags" FORCE)
+endif()
+
 find_package(Threads REQUIRED)
 
 add_executable(pam_st
