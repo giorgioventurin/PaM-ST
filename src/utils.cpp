@@ -572,7 +572,8 @@ std::vector<int> null_family_counts(const Dataset& data,
                                     const CandidateNeighborhoods& candidates,
                                     const CandidateFamily& family) {
     const int n_labels = static_cast<int>(data.label_names.size());
-    const int n_centers = static_cast<int>(candidates.centers.size());
+    // Rows, not centers: the significance search scores one half of the split.
+    const int n_rows = static_cast<int>(candidates.rows.size());
     std::vector<int> null_counts(
         static_cast<std::size_t>(family.size) * config.permutations, 0);
     std::vector<int> draw(family.size, 0);
@@ -582,7 +583,7 @@ std::vector<int> null_family_counts(const Dataset& data,
         shuffle_labels_within_groups(shuffle_plan, labels, rng);
         count_family(
             label_histograms(candidates.neighbors, candidates.rows, labels, n_labels, config.threads),
-            n_centers, n_labels, family, config, draw.data());
+            n_rows, n_labels, family, config, draw.data());
         for (int c = 0; c < family.size; ++c) {
             null_counts[static_cast<std::size_t>(c) * config.permutations + b] = draw[c];
         }
@@ -895,6 +896,42 @@ int disjoint_support(const std::vector<unsigned char>& matched,
     return support;
 }
 
+// True when a cell sits in a tile that the checkerboard assigns to testing.
+bool in_test_tile(const std::array<double, 2>& point, const AnalysisConfig& config) {
+    const bool block = config.null_model == NullModel::Block;
+    const std::array<std::int64_t, 2> tile = grid_tile(
+        point, config.split_size, block ? config.block_origin_x : 0.0,
+        block ? config.block_origin_y : 0.0);
+    return ((tile[0] + tile[1]) % 2 + 2) % 2 != 0;
+}
+
+// The null has to condition on whatever chose the family. Only labels in the
+// testing tiles are shuffled; the selection half keeps its observed labels, so
+// the permutation distribution matches the conditional distribution the
+// selected family was drawn from.
+LabelShufflePlan restrict_to_test_tiles(const LabelShufflePlan& plan,
+                                        const Dataset& data,
+                                        const AnalysisConfig& config) {
+    LabelShufflePlan restricted;
+    restricted.block_count = plan.block_count;
+    for (const std::vector<int>& group : plan.groups) {
+        std::vector<int> kept;
+        for (const int cell : group) {
+            if (in_test_tile(data.coords[cell], config)) kept.push_back(cell);
+        }
+        if (!kept.empty()) restricted.groups.push_back(std::move(kept));
+    }
+    for (const std::vector<int>& group : restricted.groups) {
+        const bool mixed = std::any_of(group.begin() + 1, group.end(),
+            [&](const int cell) { return data.labels[cell] != data.labels[group.front()]; });
+        if (mixed) {
+            ++restricted.mixed_group_count;
+            restricted.exchangeable_cell_count += static_cast<int>(group.size());
+        }
+    }
+    return restricted;
+}
+
 // Reports the most significant candidates instead of the most frequent one.
 //
 // The family is chosen on one half of a checkerboard of tiles and everything
@@ -952,6 +989,18 @@ Result run_significance_test(const Dataset& data,
                   << config.min_type_cells << " cells";
     }
     std::cerr << "\n";
+    // The family minimum hits its floor in up to family/(B+1) of the draws, so
+    // that ratio bounds the smallest adjusted p-value a run of independent
+    // candidates can produce. Correlated candidates, which near-duplicate
+    // compositions are, reach lower.
+    if (config.permutations + 1 < 20 * family.size) {
+        std::cerr << "  warning: " << config.permutations << " permutations for "
+                  << family.size << " candidates; the smallest attainable adjusted "
+                     "p-value is about "
+                  << static_cast<double>(family.size) / (config.permutations + 1)
+                  << " for independent candidates. Raise --permutations or "
+                     "--min-support if nothing reaches significance.\n";
+    }
     if (family.size == 0) {
         result.motif_tests.push_back(summarize_motif_test(
             {0, 0, std::vector<int>(n_labels, 0)},
@@ -983,8 +1032,12 @@ Result run_significance_test(const Dataset& data,
 
     const CandidateNeighborhoods test_candidates{
         candidates.centers, candidates.neighbors, test_rows, test_histograms};
+    const LabelShufflePlan test_plan = restrict_to_test_tiles(shuffle_plan, data, config);
+    result.null_shuffle_group_count = static_cast<int>(test_plan.groups.size());
+    result.null_mixed_group_count = test_plan.mixed_group_count;
+    result.null_exchangeable_cell_count = test_plan.exchangeable_cell_count;
     const std::vector<int> null_counts =
-        null_family_counts(data, config, shuffle_plan, test_candidates, family);
+        null_family_counts(data, config, test_plan, test_candidates, family);
     const FamilyScores scores = score_family(
         family.observed, family.first_index, null_counts, config.permutations);
 

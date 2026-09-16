@@ -10,14 +10,20 @@
 // adjustment on the minimum p-value over the family: a candidate is credited
 // only if chance would beat it *anywhere* in the family that often.
 //
-// p-values are compared as exact integers. A raw p-value is k/(B+1) and a null
-// draw's p-value is k/B, so p1 <= p2 becomes k1*(B+1) <= k2*B.
+// Observed value and draws are one pooled set of B + 1 exchangeable values, and
+// every p-value counts within that same set. Scoring the draws against the
+// draws alone instead would put their smallest attainable p-value at 1/B while
+// the observed reaches 1/(B + 1), so an observed value at its floor could never
+// be matched and the adjustment would reject far too often. Sharing the
+// denominator also makes every comparison an exact integer one.
+//
+// Note that the smallest attainable adjusted p-value is about
+// family size / (B + 1): B has to grow with the family to keep any power.
 FamilyScores score_family(const std::vector<int>& observed,
                           const std::vector<int>& first_index,
                           const std::vector<int>& null_counts,
                           const int permutations) {
     const int n_candidates = static_cast<int>(observed.size());
-    const long long b_total = permutations;
     FamilyScores scores;
     scores.null_mean.assign(n_candidates, 0.0);
     scores.null_sd.assign(n_candidates, 0.0);
@@ -25,7 +31,7 @@ FamilyScores score_family(const std::vector<int>& observed,
     scores.p_raw.assign(n_candidates, 1.0);
     scores.p_adjusted.assign(n_candidates, 1.0);
 
-    std::vector<long long> raw_numerator(n_candidates, 1);
+    std::vector<int> raw_numerator(n_candidates, 1);
     // p-value numerator of each draw against the other draws, per candidate.
     std::vector<std::vector<int>> draw_numerator(n_candidates);
     for (int c = 0; c < n_candidates; ++c) {
@@ -53,9 +59,11 @@ FamilyScores score_family(const std::vector<int>& observed,
         std::sort(sorted.begin(), sorted.end());
         draw_numerator[c].resize(permutations);
         for (int b = 0; b < permutations; ++b) {
-            // #{draws >= this draw}, which already counts the draw itself.
+            // #{pooled values >= this draw}: the draws, which already count the
+            // draw itself, plus the observed value.
             draw_numerator[c][b] = permutations - static_cast<int>(
-                std::lower_bound(sorted.begin(), sorted.end(), column[b]) - sorted.begin());
+                std::lower_bound(sorted.begin(), sorted.end(), column[b]) - sorted.begin()) +
+                (observed[c] >= column[b] ? 1 : 0);
         }
     }
 
@@ -75,10 +83,7 @@ FamilyScores score_family(const std::vector<int>& observed,
         int exceedances = 0;
         for (int b = 0; b < permutations; ++b) {
             running_min[b] = std::min(running_min[b], draw_numerator[c][b]);
-            if (static_cast<long long>(running_min[b]) * (b_total + 1) <=
-                raw_numerator[c] * b_total) {
-                ++exceedances;
-            }
+            if (running_min[b] <= raw_numerator[c]) ++exceedances;
         }
         scores.p_adjusted[c] = (1.0 + exceedances) / (permutations + 1.0);
     }

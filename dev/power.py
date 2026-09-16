@@ -1,6 +1,6 @@
 """Detection of planted two-type niches.
 
-    python3 dev/power.py 12
+    python3 dev/power.py 12 [permutations]
 
 Each dataset plants 40 niches of radius 150 filled with two rare types. The
 search should recover that composition in essentially every dataset.
@@ -12,6 +12,7 @@ import make_datasets as fixtures
 DEV = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(DEV, "pam_st")
 reps = int(sys.argv[1]) if len(sys.argv) > 1 else 12
+PERMUTATIONS = sys.argv[2] if len(sys.argv) > 2 else "199"
 
 if __name__ == "__main__":
     work = os.path.join(DEV, "power_out")
@@ -26,7 +27,7 @@ if __name__ == "__main__":
         out = os.path.join(work, str(rep))
         subprocess.run([BINARY, "--input", path, "--radius", "100", "--rho", "0.05", "--metric", "l2",
                         "--statistic", "minp", "--min-support", "5", "--split-size", "1000",
-                        "--max-motifs", "5", "--permutations", "199", "--seed", str(500 + rep),
+                        "--max-motifs", "5", "--permutations", PERMUTATIONS, "--seed", str(500 + rep),
                         "--threads", "2", "--null-model", "block", "--block-size", "750",
                         "--output-dir", out], capture_output=True, text=True, check=True)
         reported = [r for r in csv.DictReader(open(os.path.join(out, "motif_significance.csv")))

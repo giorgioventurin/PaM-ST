@@ -1,7 +1,15 @@
 """False positives of the significance search where nothing should be found.
 
-    python3 dev/fwer.py csr 40      uniform positions, i.i.d. labels: the null is exactly true
-    python3 dev/fwer.py smooth 40   composition drifts across the tissue, still no local structure
+    python3 dev/fwer.py csr 40 [min_support] [permutations]
+        uniform positions, i.i.d. labels: the null is exactly true
+    python3 dev/fwer.py smooth 40 [min_support]
+        composition drifts across the tissue, still no local structure
+
+A low min_support is the informative setting here: it lets candidate families
+form on structureless tissue, so the rejection rate can actually be observed.
+Permutations must outnumber the family by roughly 20x, or the smallest
+attainable adjusted p-value sits above alpha and nothing can be rejected at
+all - which would look like perfect calibration while measuring nothing.
 
 At most about 5% of `csr` datasets should report anything at alpha = 0.05.
 """
@@ -13,6 +21,8 @@ import make_datasets as fixtures
 DEV = os.path.dirname(os.path.abspath(__file__))
 BINARY = os.path.join(DEV, "pam_st")
 scenario, reps = sys.argv[1], int(sys.argv[2])
+MIN_SUPPORT = sys.argv[3] if len(sys.argv) > 3 else "5"
+PERMUTATIONS = sys.argv[4] if len(sys.argv) > 4 else "199"
 
 
 def dataset(rep):
@@ -43,8 +53,8 @@ def run(rep):
     out = os.path.join(work, f"{scenario}_{rep}")
     try:
         done = subprocess.run([BINARY, "--input", path, "--radius", "100", "--rho", "0.05",
-                               "--metric", "l2", "--statistic", "minp", "--min-support", "5",
-                               "--split-size", "1000", "--max-motifs", "5", "--permutations", "199",
+                               "--metric", "l2", "--statistic", "minp", "--min-support", MIN_SUPPORT,
+                               "--split-size", "1000", "--max-motifs", "5", "--permutations", PERMUTATIONS,
                                "--seed", str(1000 + rep), "--threads", "1", "--null-model", "block",
                                "--block-size", "750", "--output-dir", out],
                               capture_output=True, text=True)
@@ -63,7 +73,7 @@ if __name__ == "__main__":
         results = list(pool.map(run, range(reps)))
     families = [r for r in results if r[2] > 0]
     mean_family = sum(r[2] for r in families) / max(len(families), 1)
-    print(f"{scenario}: {reps} datasets; {len(families)} produced a candidate family "
+    print(f"{scenario} (min-support {MIN_SUPPORT}, B={PERMUTATIONS}): {reps} datasets; {len(families)} produced a candidate family "
           f"(mean size {mean_family:.0f})")
     print(f"  ADJUSTED p <= 0.05 in {sum(1 for a, _, _ in results if a <= 0.05)}/{reps}"
           f"  <- target about 5%")

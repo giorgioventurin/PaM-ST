@@ -59,6 +59,24 @@ void test_duplicate_candidates_cost_nothing() {
     }
 }
 
+// A draw that is extreme for one candidate has to be able to match an observed
+// value that is extreme for another. Scoring draws against the draws alone puts
+// their floor at 1/B while the observed reaches 1/(B+1), which would leave an
+// observed floor unmatchable and reject far too often.
+void test_extreme_draw_matches_extreme_observation() {
+    const int B = 9;
+    // Candidate 0: the observation beats every draw. Candidate 1: one draw does
+    // the same within its own column.
+    const std::vector<int> observed = {10, 0};
+    const auto counts = matrix({{0, 0, 0, 0, 0, 0, 0, 0, 0},
+                                {0, 0, 0, 99, 0, 0, 0, 0, 0}});
+    const FamilyScores scores = score_family(observed, {0, 1}, counts, B);
+    require(close(scores.p_raw[0], 1.0 / (B + 1.0)), "the observation is the most extreme value");
+    require(scores.p_adjusted[0] > scores.p_raw[0] + 1e-12,
+            "a rival candidate's extreme draw must cost the family something");
+    require(close(scores.p_adjusted[0], 2.0 / (B + 1.0)), "exactly one draw matches it");
+}
+
 void test_adjustment_is_conservative_and_monotone() {
     // Twenty independent-looking candidates: adjusted >= raw everywhere, and
     // adjusted values never decrease along the ranking.
@@ -115,6 +133,7 @@ int main() {
         test_raw_p_values();
         test_single_candidate_is_unadjusted();
         test_duplicate_candidates_cost_nothing();
+        test_extreme_draw_matches_extreme_observation();
         test_adjustment_is_conservative_and_monotone();
         test_family_filters();
         std::cout << "Significance scoring, Westfall-Young adjustment and family filters passed\n";

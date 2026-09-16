@@ -1,0 +1,16 @@
+label,count
+Bcells,0
+CD8_Tcells,0
+Endothelial_cells,0
+Epithelial_cancer,0
+Macrophages,0
+Mem_CD4Tcells,0
+Neutrophils,0
+Other_cancer,0
+Other_fibroblasts,13
+Other_immune,1
+Proliferating_Epithelial_cancer,0
+Proliferating_Other_cancer,0
+Proliferating_Other_fibroblasts,0
+Proliferating_Other_immune,0
+Treg,0
