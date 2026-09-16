@@ -52,6 +52,13 @@ def compartments(seed=12):
     return rows
 
 
+def sparse(seed=5, count=700, extent=900.0, types=4):
+    """A small, sparse, structureless tissue: few candidates and thin support."""
+    rng = random.Random(seed)
+    return [[rng.uniform(0, extent), rng.uniform(0, extent), f"T{rng.randrange(types)}"]
+            for _ in range(count)]
+
+
 def real_crop(half_width=4000.0):
     """An 8000 x 8000 window of LSP31891, centred on the median cell."""
     source = os.path.join(DEV, REAL)
@@ -67,6 +74,7 @@ def real_crop(half_width=4000.0):
 if __name__ == "__main__":
     print("niches.csv", write("niches.csv", niches()))
     print("compartments.csv", write("compartments.csv", compartments()))
+    print("sparse.csv", write("sparse.csv", sparse()))
     try:
         print("real_crop.csv", write("real_crop.csv", real_crop()))
     except FileNotFoundError:

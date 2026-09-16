@@ -1111,6 +1111,13 @@ Result run_significance_test(const Dataset& data,
         }
         result.motif_tests.push_back(std::move(test));
     }
+    if (result.motif_tests.empty()) {
+        // The family was tested but nothing recurred often enough to report.
+        // Downstream readers still expect one row.
+        result.motif_tests.push_back(summarize_motif_test(
+            {0, 0, std::vector<int>(n_labels, 0)},
+            std::vector<int>(config.permutations, 0), 1, config.alpha));
+    }
     result.tested_motifs = static_cast<int>(result.motif_tests.size());
     result.selected_rank = 1;
     return result;

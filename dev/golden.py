@@ -16,7 +16,7 @@ TESTS = os.path.join(ROOT, "tests", "data")
 FULL = os.path.join(ROOT, "..", "data", "PDAC_202602", "annotated_cells",
                     "LSP31891_P181_rep1_annotated.csv")
 DATA = {"niches": f"{FIXTURES}/niches.csv", "compart": f"{FIXTURES}/compartments.csv",
-        "crop": f"{FIXTURES}/real_crop.csv", "tiny": f"{TESTS}/block_null_cells.csv",
+        "crop": f"{FIXTURES}/real_crop.csv", "sparse": f"{FIXTURES}/sparse.csv", "tiny": f"{TESTS}/block_null_cells.csv",
         "frozen": f"{TESTS}/frozen_cells.csv", "prop": f"{TESTS}/proportional_histograms.csv"}
 
 
@@ -69,6 +69,17 @@ def cases():
                                       "--min-type-cells", "2", "--max-motifs", "5",
                                       "--permutations", "49", "--seed", "5", "--threads", "4",
                                       "--null-model", "block", "--block-size", "500"]
+    # A family forms but nothing clears the reporting floor on the testing half,
+    # which used to leave no rows at all and crash the writers.
+    c["sparse_minp_nothing_reported"] = ["--input", DATA["sparse"], "--radius", "60", "--rho", "0.05",
+                                         "--statistic", "minp", "--min-support", "2",
+                                         "--split-size", "300", "--max-motifs", "4",
+                                         "--permutations", "9", "--seed", "7", "--threads", "3",
+                                         "--null-model", "block", "--block-size", "200"]
+    c["sparse_minp_empty_family"] = ["--input", DATA["sparse"], "--radius", "60", "--rho", "0.05",
+                                     "--statistic", "minp", "--min-support", "40",
+                                     "--split-size", "300", "--max-motifs", "4",
+                                     "--permutations", "9", "--seed", "7", "--threads", "2"]
     c["niches_frozen2"] = ["--input", DATA["niches"], "--radius", "100", "--permutations", "9",
                            "--max-motifs", "3", "--freeze-cell-type", "T0", "--freeze-cell-type", "T1",
                            "--null-model", "block", "--block-size", "300"]
