@@ -23,6 +23,13 @@ dev/candidate/
 dev/fwer_out/
 dev/power_out/
 
+# LaTeX build products
+docs/*.pdf
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.toc
+
 # Editor and OS
 .idea/
 .DS_Store

@@ -1,0 +1,523 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{proposition}[definition]{Proposition}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+\newcommand{\cells}{\mathcal{C}}
+\newcommand{\types}{\mathcal{T}}
+\newcommand{\lab}{\ell}
+\newcommand{\obs}{\mathrm{obs}}
+\newcommand{\Nb}[1]{N_{#1}}
+\newcommand{\ind}[1]{\mathbf{1}\!\left[#1\right]}
+\newcommand{\Real}{\mathbb{R}}
+\newcommand{\Nat}{\mathbb{Z}_{\ge 0}}
+
+\title{PaM-ST: the analysis pipeline, formally}
+\author{}
+\date{16 September 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note states what \texttt{pam\_st} computes, in the form the code implements
+rather than in the form one might wish for. Section~\ref{sec:data} fixes
+notation for cells, neighbourhoods and compositions; Section~\ref{sec:null}
+defines the two null models; Section~\ref{sec:legacy} states the original
+most-frequent-motif test; Section~\ref{sec:sig} defines the significance search
+(\texttt{--statistic minp}), which reports the top $K$ motifs ranked by
+family-wise adjusted significance. Section~\ref{sec:guarantees} collects the
+guarantees and the assumptions they rest on, and Section~\ref{sec:limits} the
+limitations that remain. Numbers from one real run are given in
+Section~\ref{sec:instance} so every quantity has a concrete value attached.
+\end{abstract}
+
+\section{Cells, neighbourhoods, compositions}
+\label{sec:data}
+
+\begin{definition}[Tissue]
+A tissue is a finite set of cells $\cells=\{1,\dots,n\}$ with positions
+$x_i\in\Real^2$ and labels $\lab_i\in\types=\{1,\dots,K\}$. The labelling is the
+vector $\lab=(\lab_1,\dots,\lab_n)$. Cells annotated \texttt{unclassified} are
+removed before analysis and take no part in anything below.
+\end{definition}
+
+Positions are fixed throughout; every null model in this note acts on $\lab$
+alone.
+
+\begin{definition}[Neighbourhood]
+For a radius $r>0$, the neighbourhood of cell $i$ is
+\[
+  \Nb{i}=\{\,j\in\cells : \lVert x_j-x_i\rVert_2\le r\,\},
+\]
+which contains $i$ itself. Neighbourhoods overlap and are never disjointified.
+\end{definition}
+
+\begin{definition}[Composition]
+The composition of $\Nb{i}$ under a labelling $\lab$ is the count vector
+$h_i(\lab)\in\Nat^K$ with
+\[
+  h_i(\lab)[t]=\bigl|\{\,j\in \Nb{i} : \lab_j=t\,\}\bigr|,\qquad t\in\types .
+\]
+\end{definition}
+
+A composition is compared only through its \emph{direction}: two neighbourhoods
+with the same type proportions but different sizes are the same motif.
+
+\begin{definition}[Motif distance]
+For the Euclidean metric (\texttt{--metric l2}), write $u(h)=h/\lVert
+h\rVert_2$ for $h\neq 0$ and
+\[
+  d(h,h')=\lVert u(h)-u(h')\rVert_2 \in[0,\sqrt2],
+\]
+the chord distance between directions. For the Jensen--Shannon metric
+(\texttt{--metric js}), write $p(h)=h/(\mathbf 1^\top h)$ and
+\[
+  d(h,h')=\sqrt{\operatorname{JS}\bigl(p(h),p(h')\bigr)}\in[0,\sqrt{\ln 2}],
+  \qquad
+  \operatorname{JS}(p,q)=H\!\left(\tfrac{p+q}{2}\right)-\tfrac{H(p)+H(q)}{2},
+\]
+with $H$ the Shannon entropy in nats. Two compositions \emph{match} at tolerance
+$\rho\ge 0$ when $d(h,h')\le\rho$; for $\rho=0$ the rule is exact proportional
+equality. In the JS case the implementation compares squared distances with a
+slack of $10^{-12}$.
+\end{definition}
+
+\begin{definition}[Composition classes]
+Let $g(h)=\gcd(h[1],\dots,h[K])$, with $g(0)=0$. Define $h\sim h'$ iff
+$g(h)>0$, $g(h')>0$ and $h/g(h)=h'/g(h')$, or $h=h'=0$. The classes of $\sim$
+among $\{h_i(\lab)\}_{i\in S}$ are written $q\in\mathcal Q(\lab,S)$, with
+multiplicity $m_q$ and representative $\hat h_q$, the first count vector of the
+class encountered in index order.
+\end{definition}
+
+\begin{definition}[Motif frequency]
+\label{def:freq}
+For a query vector $v\in\Nat^K$, a labelling $\lab$ and a set of centres
+$S\subseteq\cells$,
+\[
+  N(v;\lab,S)\;=\;\bigl|\{\,i\in S : d\bigl(h_i(\lab),v\bigr)\le\rho\,\}\bigr|
+  \;=\;\sum_{q\in\mathcal Q(\lab,S)} m_q\,\ind{d(\hat h_q,v)\le\rho}.
+\]
+The right-hand form is what the code evaluates: classes are built once and a
+single ball query per class is answered by a KD-tree ($\ell_2$) or a
+vantage-point tree (JS).
+\end{definition}
+
+Frequency counts overlapping neighbourhoods separately, so one dense clump can
+contribute many times. The next definition is the antidote used for selection
+and reporting.
+
+\begin{definition}[Disjoint support]
+\label{def:disjoint}
+Let $M(v;\lab,S)=\{\,i\in S: d(h_i(\lab),v)\le\rho\,\}$, enumerated in
+increasing index order as $i_1<i_2<\dots$. Let $A\subseteq M$ be built greedily:
+$i_k$ is accepted iff $\Nb{i_k}$ shares no cell with any already accepted
+neighbourhood. Then $D(v;\lab,S)=|A|$, the number of pairwise cell-disjoint
+occurrences.
+\end{definition}
+
+\section{Null models}
+\label{sec:null}
+
+\begin{definition}[Global null]
+$H_0^{\mathrm{glob}}$: conditional on positions and on the multiset of labels,
+$\lab$ is uniform over all $n!$ rearrangements, i.e.\ over the orbit of the
+symmetric group $\mathfrak S(\cells)$ acting on labels.
+\end{definition}
+
+\begin{definition}[Block null]
+Fix a tile side $L>0$ and an origin $o\in\Real^2$. The tile of a point is
+\[
+  \gamma_L(x)=\Bigl(\bigl\lfloor (x_1-o_1)/L \bigr\rfloor,\;
+                    \bigl\lfloor (x_2-o_2)/L \bigr\rfloor\Bigr),
+\]
+and $\mathcal B=\{B_1,\dots,B_G\}$ is the partition of $\cells$ it induces.
+$H_0^{\mathrm{blk}}$: conditional on positions and on the label multiset
+\emph{of each tile}, $\lab$ is uniform over
+$\Pi_{\mathcal B}=\prod_{g=1}^{G}\mathfrak S(B_g)$ acting on labels.
+\end{definition}
+
+The block null preserves each tile's cell-type counts exactly and randomises
+only the arrangement inside a tile. $H_0^{\mathrm{glob}}$ is the special case
+$G=1$; the implementation reproduces the global RNG stream exactly when one tile
+covers the tissue.
+
+\begin{remark}[Draws are i.i.d.]
+The implementation applies a fresh uniform within-tile permutation to the
+\emph{previous} draw rather than to $\lab^{\obs}$. Since composing a uniformly
+distributed element of $\Pi_{\mathcal B}$ with any fixed arrangement is again
+uniform and independent of that arrangement, $\lab^{(1)},\dots,\lab^{(B)}$ are
+i.i.d.\ draws from the null.
+\end{remark}
+
+\section{The frequency test (\texttt{--statistic count})}
+\label{sec:legacy}
+
+This is the original procedure, retained for reproducibility. Let
+$\mathcal V(\lab,S)=\{\hat h_q\}_{q\in\mathcal Q(\lab,S)}$ and let
+\[
+  T_{(1)}(\lab)\ \ge\ T_{(2)}(\lab)\ \ge\ \cdots
+\]
+be the frequencies $N(v;\lab,S)$, $v\in\mathcal V(\lab,S)$, sorted decreasingly.
+The statistic of rank $k$ is $T_{(k)}$, and with draws $\lab^{(1)},\dots,\lab^{(B)}$
+\[
+  p_k=\frac{1+\bigl|\{\,b : T_{(k)}(\lab^{(b)})\ \ge\ T_{(k)}(\lab^{\obs})\,\}\bigr|}{B+1}.
+\]
+
+\begin{remark}
+$T_{(1)}$ is a maximum over the whole search, so $p_1$ is already adjusted for
+having searched. The price is that $T_{(k)}$ is an order statistic of the
+search, not a statement about any particular composition: the class attaining
+$T_{(k)}(\lab^{(b)})$ generally differs from draw to draw. Consequently the
+procedure can test whether \emph{some} motif is unusually frequent, but cannot
+attach a $p$-value to a named motif --- which is what Section~\ref{sec:sig}
+provides.
+\end{remark}
+
+\section{The significance search (\texttt{--statistic minp})}
+\label{sec:sig}
+
+The search reports the $K_{\max}$ most significant motifs. Three ingredients
+make that honest: a family fixed before resampling, a null conditioned on
+whatever chose that family, and a family-wise correction.
+
+\subsection{Selection/testing split}
+
+\begin{definition}[Checkerboard split]
+Fix a split side $L_s>2r$. For cell $i$ let $\gamma_{L_s}(x_i)=(a,b)$ and let
+$c(i)=o+L_s\cdot(a,b)$ be the lower corner of its tile. Cell $i$ is
+\emph{interior} when its disc fits inside its own tile,
+\[
+  \min_{k\in\{1,2\}}\ \min\bigl(x_{ik}-c_k(i),\ c_k(i)+L_s-x_{ik}\bigr)\ \ge\ r,
+\]
+and its parity is $\pi(i)=(a+b)\bmod 2$. The selection centres are
+$S_0=\{i\ \text{interior}: \pi(i)=0\}$ and the testing centres are
+$S_1=\{i\ \text{interior}: \pi(i)=1\}$; non-interior cells are centres in
+neither set.
+\end{definition}
+
+Write $A_0$ and $A_1$ for the sets of \emph{cells} lying in even and odd split
+tiles respectively, so $\cells=A_0\cup A_1$.
+
+\begin{lemma}[Separation]
+\label{lem:sep}
+For $i\in S_1$ we have $\Nb{i}\subseteq A_1$, and for $j\in S_0$ we have
+$\Nb{j}\subseteq A_0$. Consequently $\Nb{i}\cap \Nb{j}=\emptyset$ for all
+$i\in S_1$, $j\in S_0$.
+\end{lemma}
+
+\begin{proof}
+Let $i\in S_1$ with tile corner $c(i)$. Interiority gives
+$c_k(i)+r\le x_{ik}\le c_k(i)+L_s-r$ for $k=1,2$, so every $y$ with
+$\lVert y-x_i\rVert_2\le r$ satisfies $c_k(i)\le y_k\le c_k(i)+L_s$, i.e.\ lies
+in the closure of the half-open tile of $x_i$. The interiority test uses
+non-strict inequalities, so containment in the tile itself can fail only when
+$y_k=c_k(i)+L_s$ exactly, i.e.\ a neighbour sits precisely on the upper tile
+boundary at distance exactly $r$; with measured coordinates this is a null
+event, and tightening the test to a strict inequality removes it. Otherwise
+$\Nb{i}$ is contained in that tile, which belongs to $A_1$; symmetrically
+for $j$. The two tiles differ, as their parities differ,
+and tiles are disjoint.
+\end{proof}
+
+\subsection{The candidate family}
+
+\begin{definition}[Family]
+\label{def:family}
+With support floor $s$ and optional composition filter $(m,c)$, the family is
+\[
+  \mathcal F=\Bigl\{\hat h_q \;:\; q\in\mathcal Q(\lab^{\obs},S_0),\;
+    N(\hat h_q;\lab^{\obs},S_0)\ge s,\;
+    D(\hat h_q;\lab^{\obs},S_0)\ge s,\;
+    \bigl|\{t:\hat h_q[t]\ge c\}\bigr|\ge m \Bigr\},
+\]
+written $\mathcal F=\{v_1,\dots,v_C\}$ with $C=|\mathcal F|$. The composition
+filter is inactive when $m=0$.
+\end{definition}
+
+\begin{lemma}[Measurability]
+\label{lem:meas}
+$\mathcal F$ is a deterministic function of $\lab|_{A_0}$, the labels in the
+selection tiles.
+\end{lemma}
+
+\begin{proof}
+$\mathcal F$ depends on $\lab$ only through $\{h_i(\lab)\}_{i\in S_0}$ and the
+match sets $M(\cdot;\lab,S_0)$, each of which depends only on labels of cells in
+$\bigcup_{i\in S_0}\Nb{i}\subseteq A_0$ by Lemma~\ref{lem:sep}.
+\end{proof}
+
+\subsection{The conditional null}
+
+\begin{definition}[Restricted block null]
+$H_0^{\mathrm{blk},1}$: conditional on positions, on per-tile label multisets,
+and on $\lab|_{A_0}$, the labelling is uniform over
+$\Pi_{\mathcal B}^{1}=\prod_{g}\mathfrak S(B_g\cap A_1)$, i.e.\ labels are
+permuted only within the intersection of each block tile with the testing
+tiles, and $\lab|_{A_0}$ is held at its observed value.
+\end{definition}
+
+This is the null the implementation samples. Conditioning on $\lab|_{A_0}$ is
+not cosmetic: by Lemma~\ref{lem:meas} it is exactly the information used to
+choose $\mathcal F$, so the family is a constant under the null.
+
+\subsection{Statistics}
+
+For $c=1,\dots,C$ put
+\[
+  N_c^{\obs}=N(v_c;\lab^{\obs},S_1),\qquad
+  N_c^{(b)}=N(v_c;\lab^{(b)},S_1),\quad b=1,\dots,B,
+\]
+where $\lab^{(1)},\dots,\lab^{(B)}\sim H_0^{\mathrm{blk},1}$ i.i.d. Define the
+pooled multiset $\mathcal P_c=\{N_c^{\obs},N_c^{(1)},\dots,N_c^{(B)}\}$ of
+$B+1$ values and the pooled tail count
+\[
+  R_c(y)=\bigl|\{\,z\in\mathcal P_c : z\ge y\,\}\bigr| .
+\]
+The $p$-values are
+\begin{equation}
+  \label{eq:p}
+  p_c=\frac{R_c\bigl(N_c^{\obs}\bigr)}{B+1},
+  \qquad
+  p_c^{(b)}=\frac{R_c\bigl(N_c^{(b)}\bigr)}{B+1}.
+\end{equation}
+
+\begin{remark}[Why one pooled set]
+\label{rem:pooled}
+Scoring the draws against the draws alone gives them denominator $B$ and floor
+$1/B$, while the observation reaches $1/(B+1)$. An observation at its floor
+could then never be matched by any draw, and the adjustment of
+Section~\ref{sec:wy} rejects far too often; measured on exchangeable counts,
+$10$--$16\%$ at $\alpha=0.05$. Equation~\eqref{eq:p} puts observation and draws
+on one scale, which restores the nominal level and makes every comparison an
+integer one.
+\end{remark}
+
+Reported effect sizes are, with $\bar N_c=B^{-1}\sum_b N_c^{(b)}$ and $\sigma_c$
+the corresponding standard deviation,
+\[
+  \operatorname{lift}_c=\frac{N_c^{\obs}}{\bar N_c},
+  \qquad
+  z_c=\frac{N_c^{\obs}-\bar N_c}{\sigma_c},
+  \qquad
+  D_c=D(v_c;\lab^{\obs},S_1).
+\]
+
+\subsection{Family-wise adjustment}
+\label{sec:wy}
+
+\begin{definition}[Westfall--Young step-down on the minimum $p$-value]
+Order the candidates so that $p_{(1)}\le p_{(2)}\le\dots\le p_{(C)}$, ties broken
+by decreasing lift and then by first appearance. For $k=1,\dots,C$ let
+\[
+  M^{(b)}_k=\min_{j\ge k} p^{(b)}_{(j)},
+  \qquad
+  \tilde p_{(k)}=\frac{1+\bigl|\{\,b: M^{(b)}_k\le p_{(k)}\,\}\bigr|}{B+1},
+  \qquad
+  \bar p_{(k)}=\max_{j\le k}\tilde p_{(j)} .
+\]
+The adjusted $p$-value of candidate $(k)$ is $\bar p_{(k)}$, and $H_{0,c}$ is
+rejected iff $\bar p_c\le\alpha$.
+\end{definition}
+
+The final maximum enforces monotonicity along the ranking, so that a less
+extreme candidate never receives a smaller adjusted value than a more extreme
+one.
+
+\subsection{What is reported}
+\label{sec:report}
+
+Candidates are traversed in the ranking order of Section~\ref{sec:wy}, along
+which $\bar p$ is non-decreasing by construction, and a candidate is reported
+unless (i) it lies within $2\rho$ of an already reported one, or (ii)
+$D_c<s$. Traversal stops after $K_{\max}$ reports. Both filters only ever
+remove candidates from the rejected set (Proposition~\ref{prop:filter}).
+
+\section{Guarantees and assumptions}
+\label{sec:guarantees}
+
+\begin{proposition}[Validity of the raw $p$-values]
+\label{prop:valid}
+Assume $H_0^{\mathrm{blk},1}$ and condition on $\lab|_{A_0}$. Then for each
+fixed $c$, $N_c^{\obs},N_c^{(1)},\dots,N_c^{(B)}$ are exchangeable, and
+$\Pr(p_c\le\alpha)\le\alpha$ for every $\alpha\in(0,1)$.
+\end{proposition}
+
+\begin{proof}
+Under the conditioning, $\mathcal F$ is fixed (Lemma~\ref{lem:meas}), so $v_c$
+is a constant and $N_c^{\obs}=N(v_c;\lab^{\obs},S_1)$ is a fixed measurable
+function of $\lab|_{A_1}$; the draws apply i.i.d.\ uniform elements of
+$\Pi^1_{\mathcal B}$ to the same labelling, so the $B+1$ values are
+exchangeable. For exchangeable values the pooled tail count satisfies the usual
+rank bound $\Pr\bigl(R_c(N^{\obs}_c)\le \lfloor \alpha(B+1)\rfloor\bigr)\le\alpha$,
+with equality when ties have probability zero.
+\end{proof}
+
+\begin{proposition}[Family-wise error]
+\label{prop:fwer}
+Let $\mathcal T_0\subseteq\{1,\dots,C\}$ index the true null candidates and
+assume subset pivotality: the joint law of $(p_c)_{c\in\mathcal T_0}$ under the
+full null equals its law under the hypothesis that only $\mathcal T_0$ is null.
+Then the step-down procedure satisfies
+$\Pr\bigl(\exists c\in\mathcal T_0:\ \bar p_c\le\alpha\bigr)\le\alpha$.
+\end{proposition}
+
+This is the standard Westfall--Young result; the resampling scheme supplies the
+joint law of the $p$-values including their dependence, which is why nothing
+weaker than subset pivotality is required and no independence is assumed.
+
+\begin{proposition}[Post-hoc filtering is safe]
+\label{prop:filter}
+Let $\mathcal R=\{c:\bar p_c\le\alpha\}$ and let $\mathcal R'\subseteq\mathcal R$
+be chosen by any rule. Then
+$\Pr(\mathcal R'\cap\mathcal T_0\neq\emptyset)\le\Pr(\mathcal R\cap\mathcal T_0\neq\emptyset)\le\alpha$.
+\end{proposition}
+
+\begin{proof}
+$\mathcal R'\cap\mathcal T_0\subseteq\mathcal R\cap\mathcal T_0$, and monotonicity
+of probability. \qedhere
+\end{proof}
+
+Hence the $2\rho$ de-duplication, the disjoint-support floor on $S_1$ and the
+cut at $K_{\max}$ (Section~\ref{sec:report}) cost nothing in validity; they only
+reduce power.
+
+\begin{remark}[Resolution and the permutation budget]
+\label{rem:budget}
+Every $p$-value in \eqref{eq:p} is a multiple of $1/(B+1)$, so
+$\bar p_c\ge 1/(B+1)$. More restrictively, whenever some draw attains the floor
+for some candidate, $M^{(b)}_1$ is at the floor for that $b$; if the candidates
+behaved independently one would expect a fraction $\approx C/(B+1)$ of draws to
+do so, giving
+\[
+  \min_c \bar p_c \ \gtrsim\ \frac{C}{B+1}.
+\]
+Rejecting at level $\alpha$ therefore requires $B\gtrsim C/\alpha$. Correlated
+candidates --- which near-duplicate compositions are --- do better than this
+bound. The implementation warns when $B+1<20\,C$.
+\end{remark}
+
+\section{Algorithm and cost}
+\label{sec:algo}
+
+\begin{enumerate}\itemsep2pt
+  \item Read cells, drop \texttt{unclassified}, index the $K$ remaining types.
+  \item Build $\Nb{i}$ for all $i$ with a hash grid of cell size $r$.
+  \item Compute $h_i(\lab^{\obs})$ for all $i$.
+  \item Split $\cells$ into $S_0$, $S_1$ and the discarded boundary band.
+  \item On $S_0$: classes, frequencies via Definition~\ref{def:freq}, then
+        $\mathcal F$ via Definition~\ref{def:family}.
+  \item On $S_1$: $N_c^{\obs}$ for every $c$.
+  \item For $b=1,\dots,B$: draw $\lab^{(b)}$ from $H_0^{\mathrm{blk},1}$,
+        recompute $\{h_i(\lab^{(b)})\}_{i\in S_1}$, their classes, and
+        $N_c^{(b)}$ for every $c$; store the $C\times B$ matrix.
+  \item Compute \eqref{eq:p}, the step-down adjustment, the effect sizes, and
+        report as in Section~\ref{sec:report}.
+\end{enumerate}
+
+With $\bar\nu$ the mean neighbourhood size and $m_b$ the number of classes in
+draw $b$, one permutation costs
+$O\bigl(|S_1|\,\bar\nu + m_b\log m_b + C\log m_b\bigr)$ --- histograms, one tree
+build, and $C$ ball queries --- and the adjustment costs $O(CB\log B)$ time and
+$O(CB)$ memory. Only the family, not the whole class set, is queried per
+permutation, which is what makes $B$ in the tens of thousands affordable.
+
+\section{A worked instance}
+\label{sec:instance}
+
+Sample LSP31891, run as
+
+\begin{quote}\small\ttfamily
+--radius 100 --rho 0.05 --metric l2 \\
+--statistic minp --min-support 10 --split-size 1500 \\
+--max-motifs 10 --permutations 25000 \\
+--null-model block --block-size 500
+\end{quote}
+
+\noindent gives:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+Quantity & Value \\
+\midrule
+Cells after dropping \texttt{unclassified} & $n=76{,}563$ \\
+Cell types & $K=19$ \\
+Occupied block tiles ($L=500$) & $G=1{,}366$ \\
+Selection centres $|S_0|$ & $28{,}346$ \\
+Testing centres $|S_1|$ & $28{,}916$ \\
+Centres dropped at split boundaries & $19{,}301$ \\
+Classes on the selection half & $15{,}672$ \\
+Candidate family $C$ & $823$ \\
+Shuffle groups under $H_0^{\mathrm{blk},1}$ & $695$ \\
+Exchangeable cells under $H_0^{\mathrm{blk},1}$ & $38{,}376$ \\
+Raw $p$-value floor $1/(B+1)$ & $4.0\times10^{-5}$ \\
+Budget bound $C/(B+1)$ of Remark~\ref{rem:budget} & $0.033$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Parameters}
+
+\begin{center}
+\begin{tabular}{llp{7.6cm}}
+\toprule
+Symbol & Flag & Meaning \\
+\midrule
+$r$ & \texttt{--radius} & Neighbourhood radius, input units \\
+$\rho$ & \texttt{--rho} & Match tolerance in the chosen metric \\
+$d$ & \texttt{--metric} & $\ell_2$ chord or $\sqrt{\mathrm{JS}}$ \\
+$L$ & \texttt{--block-size} & Block-null tile side \\
+$o$ & \texttt{--block-origin-x/y} & Block-grid origin \\
+$L_s$ & \texttt{--split-size} & Checkerboard tile side, requires $L_s>2r$ \\
+$s$ & \texttt{--min-support} & Support and disjoint-support floor \\
+$(m,c)$ & \texttt{--min-types}, \texttt{--min-type-cells} & Composition filter; $m=0$ disables it \\
+$B$ & \texttt{--permutations} & Null draws \\
+$\alpha$ & \texttt{--alpha} & Family-wise level \\
+$K_{\max}$ & \texttt{--max-motifs} & Motifs reported \\
+--- & \texttt{--statistic} & \texttt{count} (Section~\ref{sec:legacy}) or \texttt{minp} (Section~\ref{sec:sig}) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Limitations}
+\label{sec:limits}
+
+\begin{enumerate}\itemsep3pt
+  \item \textbf{The null fixes the hypothesis, and it is a strong one.}
+        $H_0^{\mathrm{blk}}$ asserts exchangeability inside tiles, so any
+        structure finer than $L$ --- including a single cell type clumping with
+        itself --- is evidence against it. Rejection therefore does not imply
+        co-localisation of \emph{different} types. Only the composition filter
+        $(m,c)$, or a null preserving each type's own clustering, addresses
+        that.
+  \item \textbf{Tile size is part of the hypothesis.} Large $L$ leaves tissue
+        scale composition differences in the alternative; $L$ near $r$ leaves
+        little to permute. Both $L$ and $L_s$ must be fixed before looking at
+        results, or the selection over sizes must itself be corrected.
+  \item \textbf{Half the data chooses, half tests.} With the boundary band, the
+        instance above tests on $38\%$ of centres. A motif confined to one
+        region may be selected and then not confirmed.
+  \item \textbf{Reported vectors are class representatives.} $\hat h_q$ is the
+        first count vector of its class, so its magnitude is arbitrary; only
+        the direction is meaningful. Centroids over matched neighbourhoods
+        would be the honest summary and are not yet implemented.
+  \item \textbf{Discreteness.} Counts are integers and ties are common, so the
+        $p$-values of \eqref{eq:p} are conservative rather than exactly uniform;
+        the procedure errs on the safe side.
+  \item \textbf{One tissue at a time.} Nothing here combines samples;
+        replication across tissues remains a separate, and stronger, criterion
+        than any single-slide $p$-value.
+\end{enumerate}
+
+\end{document}
