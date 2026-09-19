@@ -1,6 +1,0 @@
-case,mode,cells,unique_neighborhoods,eligible_neighborhoods,recurring_candidates,reported_motifs,significant_reported_motifs,observed_max_support,global_p_value,minimum_reported_search_p,strongest_search_significant,minimum_validation_holm_p,top_reported_composition,top_reported_support,results_directory
-random_labels,discovery,1800,180,180,46,7,0,13,0.805,0.805,False,,A:1; B:2; C:1; D:2; E:3; F:1,13,results/random_labels
-homotypic_blobs,discovery,1800,180,0,0,0,0,0,1,,,,,0,results/homotypic_blobs
-adjacent_domains,discovery,1800,1795,600,20,10,0,16,1,1.0,False,,A:6; B:4,16,results/adjacent_domains
-planted_mixed,discovery,1800,180,180,15,5,1,72,0.005,0.005,True,,A:4; B:3; C:3,72,results/planted_mixed
-validation_planted,validate,1800,180,180,5,5,1,72,,,,0.025,A:4; B:3; C:3,72,results/validation_planted
