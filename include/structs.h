@@ -10,6 +10,23 @@ struct Dataset {
     std::vector<std::array<double, 2>> coords;
     std::vector<int> labels;
     std::vector<std::string> label_names;
+
+    // Several tissues analysed together. Cells are stored sample by sample;
+    // samples[i] is the sample of cell i, sample_starts[s] the first cell of
+    // sample s, and sample_starts.back() the total.
+    // Each sample keeps its own coordinate system. Empty vectors mean one sample.
+    std::vector<int> samples;
+    std::vector<std::string> sample_names;
+    std::vector<int> sample_starts;
+
+    int sample_count() const {
+        return sample_names.empty() ? 1 : static_cast<int>(sample_names.size());
+    }
+    int sample_of(const int cell) const { return samples.empty() ? 0 : samples[cell]; }
+    // Row of the cell within its own sample's input file (after filtering).
+    int local_index(const int cell) const {
+        return sample_starts.empty() ? cell : cell - sample_starts[sample_of(cell)];
+    }
 };
 
 enum class DistanceMetric { Euclidean, JensenShannon };
@@ -71,6 +88,16 @@ struct AnalysisConfig {
     StageErrorControl stage_error_control = StageErrorControl::Holm;
 };
 
+// One motif's evidence within a single sample of a multi-sample run.
+struct SampleEvidence {
+    int observed = 0;
+    int disjoint_support = 0;
+    double null_mean = 0.0;
+    double null_sd = 0.0;
+    double lift = 0.0;
+    double p_value = 1.0;  // permutation p-value within this sample, unadjusted
+};
+
 struct MotifTest {
     int rank = 1;
     int observed = 0;
@@ -87,6 +114,11 @@ struct MotifTest {
     double p_value_adjusted = 1.0;  // family-wise adjusted (Westfall-Young)
     double lift = 0.0;              // observed / null mean
     int disjoint_support = 0;       // occurrences sharing no cell
+
+    // Multi-sample runs only: the same evidence split by sample, and the number
+    // of samples whose own p-value reaches alpha (descriptive, not adjusted).
+    std::vector<SampleEvidence> per_sample;
+    int replicated_in = 0;
 };
 
 struct Result {

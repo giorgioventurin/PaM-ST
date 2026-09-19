@@ -16,7 +16,10 @@
 
 namespace {
 
+// A neighbourhood-search bucket. The sample is part of the key, so cells of
+// different tissues, which share coordinate ranges, are never neighbours.
 struct GridKey {
+    int sample = 0;
     std::int64_t x = 0;
     std::int64_t y = 0;
     bool operator==(const GridKey& other) const = default;
@@ -26,7 +29,8 @@ struct GridKeyHash {
     std::size_t operator()(const GridKey& key) const {
         const auto a = static_cast<std::uint64_t>(key.x) * 0x9E3779B185EBCA87ULL;
         const auto b = static_cast<std::uint64_t>(key.y) * 0xC2B2AE3D27D4EB4FULL;
-        return static_cast<std::size_t>(a ^ (b + (a << 6U) + (a >> 2U)));
+        const auto s = static_cast<std::uint64_t>(key.sample) * 0x165667B19E3779F9ULL;
+        return static_cast<std::size_t>(a ^ (b + (a << 6U) + (a >> 2U)) ^ s);
     }
 };
 
@@ -150,12 +154,13 @@ std::vector<int> abundance_order(const Dataset& data, const std::vector<int>& co
     return order;
 }
 
-// neighbors[i] lists the cells within `radius` of centers[i], using a hash grid
-// with bucket size `radius`.
-Neighbors build_neighbors(const std::vector<std::array<double, 2>>& coords,
+// neighbors[i] lists the cells of the same sample within `radius` of
+// centers[i], using a hash grid with bucket size `radius`.
+Neighbors build_neighbors(const Dataset& data,
                           const std::vector<int>& centers,
                           const double radius,
                           const int threads) {
+    const std::vector<std::array<double, 2>>& coords = data.coords;
     if (radius < 0.0) throw std::runtime_error("radius must be non-negative");
     const int n_centers = static_cast<int>(centers.size());
     Neighbors neighbors(n_centers);
@@ -164,24 +169,26 @@ Neighbors build_neighbors(const std::vector<std::array<double, 2>>& coords,
         return neighbors;
     }
 
-    auto bucket_of = [radius](const std::array<double, 2>& p) {
-        return GridKey{static_cast<std::int64_t>(std::floor(p[0] / radius)),
+    auto bucket_of = [&](const int cell) {
+        const std::array<double, 2>& p = coords[cell];
+        return GridKey{data.sample_of(cell),
+                       static_cast<std::int64_t>(std::floor(p[0] / radius)),
                        static_cast<std::int64_t>(std::floor(p[1] / radius))};
     };
     std::unordered_map<GridKey, std::vector<int>, GridKeyHash> grid;
     grid.reserve(static_cast<std::size_t>(coords.size() * 1.3));
     for (int i = 0; i < static_cast<int>(coords.size()); ++i) {
-        grid[bucket_of(coords[i])].push_back(i);
+        grid[bucket_of(i)].push_back(i);
     }
 
     const double radius2 = radius * radius;
     parallel_for(n_centers, threads, [&](const int lo, const int hi) {
         for (int i = lo; i < hi; ++i) {
             const auto& center = coords[centers[i]];
-            const GridKey c = bucket_of(center);
+            const GridKey c = bucket_of(centers[i]);
             for (std::int64_t dx = -1; dx <= 1; ++dx) {
                 for (std::int64_t dy = -1; dy <= 1; ++dy) {
-                    const auto it = grid.find(GridKey{c.x + dx, c.y + dy});
+                    const auto it = grid.find(GridKey{c.sample, c.x + dx, c.y + dy});
                     if (it == grid.end()) continue;
                     for (const int j : it->second) {
                         const double xdiff = center[0] - coords[j][0];
@@ -565,33 +572,69 @@ void count_family(const std::vector<int>& histograms, const int n, const int n_l
     });
 }
 
-// null_counts[c * permutations + b]: candidate c in permutation b.
-std::vector<int> null_family_counts(const Dataset& data,
-                                    const AnalysisConfig& config,
-                                    const LabelShufflePlan& shuffle_plan,
-                                    const CandidateNeighborhoods& candidates,
-                                    const CandidateFamily& family) {
+// One sample's testing centres: positions into the candidate arrays, the
+// neighbourhood rows they own, and their observed histograms.
+struct SampleTestSet {
+    std::vector<int> positions;
+    std::vector<int> rows;
+    std::vector<int> histograms;
+};
+
+// The null draws. `pooled` is candidate-major, pooled[c * B + b], summed over
+// samples; it is what the family-wise test uses. With several samples, running
+// per-sample totals are kept too, so each sample's own null mean, spread and
+// p-value can be reported without storing a matrix per sample.
+struct NullDraws {
+    std::vector<int> pooled;
+    std::vector<std::vector<long long>> sum;     // [sample][candidate]
+    std::vector<std::vector<long long>> sum_sq;  // [sample][candidate]
+    std::vector<std::vector<int>> at_least;      // draws >= that sample's observed count
+};
+
+NullDraws null_family_counts(const Dataset& data,
+                             const AnalysisConfig& config,
+                             const LabelShufflePlan& shuffle_plan,
+                             const Neighbors& neighbors,
+                             const std::vector<SampleTestSet>& sets,
+                             const CandidateFamily& family,
+                             const std::vector<std::vector<int>>& observed_by_sample) {
     const int n_labels = static_cast<int>(data.label_names.size());
-    // Rows, not centers: the significance search scores one half of the split.
-    const int n_rows = static_cast<int>(candidates.rows.size());
-    std::vector<int> null_counts(
-        static_cast<std::size_t>(family.size) * config.permutations, 0);
+    const int n_samples = static_cast<int>(sets.size());
+    const int permutations = config.permutations;
+    const bool per_sample = n_samples > 1;
+    NullDraws draws;
+    draws.pooled.assign(static_cast<std::size_t>(family.size) * permutations, 0);
+    if (per_sample) {
+        draws.sum.assign(n_samples, std::vector<long long>(family.size, 0));
+        draws.sum_sq.assign(n_samples, std::vector<long long>(family.size, 0));
+        draws.at_least.assign(n_samples, std::vector<int>(family.size, 0));
+    }
     std::vector<int> draw(family.size, 0);
     std::vector<int> labels = data.labels;
     std::mt19937 rng(config.seed);
-    for (int b = 0; b < config.permutations; ++b) {
+    for (int b = 0; b < permutations; ++b) {
+        // One shuffle moves every sample at once; each sample is then counted
+        // on its own, and the pooled count is the sum.
         shuffle_labels_within_groups(shuffle_plan, labels, rng);
-        count_family(
-            label_histograms(candidates.neighbors, candidates.rows, labels, n_labels, config.threads),
-            n_rows, n_labels, family, config, draw.data());
-        for (int c = 0; c < family.size; ++c) {
-            null_counts[static_cast<std::size_t>(c) * config.permutations + b] = draw[c];
+        for (int sample = 0; sample < n_samples; ++sample) {
+            const SampleTestSet& set = sets[sample];
+            if (set.rows.empty()) continue;
+            count_family(
+                label_histograms(neighbors, set.rows, labels, n_labels, config.threads),
+                static_cast<int>(set.rows.size()), n_labels, family, config, draw.data());
+            for (int c = 0; c < family.size; ++c) {
+                draws.pooled[static_cast<std::size_t>(c) * permutations + b] += draw[c];
+                if (!per_sample) continue;
+                draws.sum[sample][c] += draw[c];
+                draws.sum_sq[sample][c] += static_cast<long long>(draw[c]) * draw[c];
+                if (draw[c] >= observed_by_sample[sample][c]) ++draws.at_least[sample][c];
+            }
         }
-        if ((b + 1) % 50 == 0 || b + 1 == config.permutations) {
-            std::cerr << "  permutation " << (b + 1) << '/' << config.permutations << '\n';
+        if ((b + 1) % 50 == 0 || b + 1 == permutations) {
+            std::cerr << "  permutation " << (b + 1) << '/' << permutations << '\n';
         }
     }
-    return null_counts;
+    return draws;
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,23 +1064,42 @@ Result run_significance_test(const Dataset& data,
     }
 
     // Test half: observed counts, then the same counts under every permutation.
+    // Each sample is counted separately; the family-wise test uses their sum.
     const int n_test = static_cast<int>(split.test.size());
-    std::vector<int> test_rows;
-    test_rows.reserve(n_test);
-    for (const int position : split.test) test_rows.push_back(candidates.rows[position]);
+    const int n_samples = data.sample_count();
     const std::vector<int> test_histograms =
         subset_rows(candidates.observed_histograms, split.test, n_labels);
+    std::vector<SampleTestSet> sets(n_samples);
+    for (const int position : split.test) {
+        SampleTestSet& set = sets[data.sample_of(candidates.centers[position])];
+        set.positions.push_back(position);
+        set.rows.push_back(candidates.rows[position]);
+    }
+    std::vector<std::vector<int>> observed_by_sample(n_samples, std::vector<int>(family.size, 0));
     family.observed.assign(family.size, 0);
-    count_family(test_histograms, n_test, n_labels, family, config, family.observed.data());
+    for (int sample = 0; sample < n_samples; ++sample) {
+        SampleTestSet& set = sets[sample];
+        set.histograms = subset_rows(candidates.observed_histograms, set.positions, n_labels);
+        if (set.rows.empty()) continue;
+        count_family(set.histograms, static_cast<int>(set.rows.size()), n_labels, family,
+                     config, observed_by_sample[sample].data());
+        for (int c = 0; c < family.size; ++c) family.observed[c] += observed_by_sample[sample][c];
+    }
+    if (n_samples > 1) {
+        std::cerr << "Testing centers by sample:";
+        for (int sample = 0; sample < n_samples; ++sample) {
+            std::cerr << ' ' << data.sample_names[sample] << '=' << sets[sample].rows.size();
+        }
+        std::cerr << '\n';
+    }
 
-    const CandidateNeighborhoods test_candidates{
-        candidates.centers, candidates.neighbors, test_rows, test_histograms};
     const LabelShufflePlan test_plan = restrict_to_test_tiles(shuffle_plan, data, config);
     result.null_shuffle_group_count = static_cast<int>(test_plan.groups.size());
     result.null_mixed_group_count = test_plan.mixed_group_count;
     result.null_exchangeable_cell_count = test_plan.exchangeable_cell_count;
-    const std::vector<int> null_counts =
-        null_family_counts(data, config, test_plan, test_candidates, family);
+    const NullDraws draws = null_family_counts(
+        data, config, test_plan, candidates.neighbors, sets, family, observed_by_sample);
+    const std::vector<int>& null_counts = draws.pooled;
     const FamilyScores scores = score_family(
         family.observed, family.first_index, null_counts, config.permutations);
 
@@ -1108,6 +1170,32 @@ Result run_significance_test(const Dataset& data,
         test.match_mask.assign(n_cells, 0);
         for (int i = 0; i < n_test; ++i) {
             if (matched[i]) test.match_mask[candidates.centers[split.test[i]]] = 1;
+        }
+        // Several samples: the same motif sample by sample. These per-sample
+        // p-values are descriptive; only the pooled adjusted p-value controls
+        // the family-wise error.
+        for (int sample = 0; n_samples > 1 && sample < n_samples; ++sample) {
+            const SampleTestSet& set = sets[sample];
+            SampleEvidence evidence;
+            evidence.observed = observed_by_sample[sample][c];
+            evidence.null_mean = static_cast<double>(draws.sum[sample][c]) / config.permutations;
+            const double mean_sq =
+                static_cast<double>(draws.sum_sq[sample][c]) / config.permutations;
+            evidence.null_sd =
+                std::sqrt(std::max(0.0, mean_sq - evidence.null_mean * evidence.null_mean));
+            evidence.lift = evidence.null_mean > 0.0
+                ? evidence.observed / evidence.null_mean
+                : (evidence.observed > 0 ? std::numeric_limits<double>::infinity() : 1.0);
+            evidence.p_value = (1.0 + draws.at_least[sample][c]) / (config.permutations + 1.0);
+            if (!set.rows.empty()) {
+                const std::vector<unsigned char> sample_matched = motif_match_rows(
+                    set.histograms, static_cast<int>(set.rows.size()), n_labels, test.pattern,
+                    config.rho, config.metric);
+                evidence.disjoint_support =
+                    disjoint_support(sample_matched, set.positions, candidates, n_cells);
+            }
+            if (evidence.p_value <= config.alpha) ++test.replicated_in;
+            test.per_sample.push_back(evidence);
         }
         result.motif_tests.push_back(std::move(test));
     }
@@ -1232,11 +1320,11 @@ Result most_frequent_pattern_test(const Dataset& data, const AnalysisConfig& con
         // Cover all cells, so neighbourhoods are built around every cell first.
         std::vector<int> all_cells(data.labels.size());
         std::iota(all_cells.begin(), all_cells.end(), 0);
-        neighbors = build_neighbors(data.coords, all_cells, config.radius, config.threads);
+        neighbors = build_neighbors(data, all_cells, config.radius, config.threads);
         centers = covering_centers(neighbors, permutable_cells, static_cast<int>(data.labels.size()));
         rows = centers;
     } else {
-        neighbors = build_neighbors(data.coords, centers, config.radius, config.threads);
+        neighbors = build_neighbors(data, centers, config.radius, config.threads);
     }
 
     const std::vector<int> observed_histograms = label_histograms(
@@ -1285,7 +1373,7 @@ FreezeSweepResult run_freeze_sweep(const Dataset& data, const AnalysisConfig& co
     std::iota(all_cells.begin(), all_cells.end(), 0);
     const LabelShufflePlan initial_shuffle_plan = make_label_shuffle_plan(data, all_cells, config);
     const auto neighbor_start = Clock::now();
-    const Neighbors all_neighbors = build_neighbors(data.coords, all_cells, config.radius, config.threads);
+    const Neighbors all_neighbors = build_neighbors(data, all_cells, config.radius, config.threads);
     sweep.neighbor_build_seconds = elapsed_seconds(neighbor_start);
     const auto histogram_start = Clock::now();
     const std::vector<int> all_histograms =

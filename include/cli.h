@@ -4,9 +4,11 @@
 #include "structs.h"
 
 #include <string>
+#include <vector>
 
 struct CliOptions {
-    std::string input;
+    std::vector<std::string> inputs;  // one per sample
+    std::string input;                // the inputs joined with ';', for reports
     std::string output_dir;
     std::string output_file;
     AnalysisConfig analysis;

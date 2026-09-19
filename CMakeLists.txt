@@ -59,6 +59,16 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME significance_unit COMMAND significance_unit)
   add_test(
+    NAME multi_sample_separation
+    COMMAND ${CMAKE_COMMAND}
+      -DPAM_ST=$<TARGET_FILE:pam_st>
+      -DINPUT_X=${CMAKE_CURRENT_SOURCE_DIR}/tests/data/two_samples_x.csv
+      -DINPUT_Y=${CMAKE_CURRENT_SOURCE_DIR}/tests/data/two_samples_y.csv
+      -DOUT_BASE=${CMAKE_CURRENT_BINARY_DIR}/multi_sample
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_multi_sample.cmake
+  )
+
+  add_test(
     NAME block_null_regression
     COMMAND ${CMAKE_COMMAND}
       -DPAM_ST=$<TARGET_FILE:pam_st>

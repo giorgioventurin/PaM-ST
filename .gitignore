@@ -22,6 +22,7 @@ dev/golden/
 dev/candidate/
 dev/fwer_out/
 dev/power_out/
+dev/multisample_out/
 
 # LaTeX build products
 docs/*.pdf

@@ -6,8 +6,13 @@
 #include <functional>
 #include <iosfwd>
 #include <string>
+#include <vector>
 
 Dataset load_data(const std::string& path);
+
+// Several tissues analysed together. Cells are concatenated sample by sample,
+// each keeping its own coordinates; cell types are aligned by name.
+Dataset load_samples(const std::vector<std::string>& paths);
 
 // Creates parent directories of `path` and calls write on the opened file.
 // Does nothing for an empty path.

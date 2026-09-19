@@ -125,6 +125,16 @@ void write_run_metrics(std::ostream& os,
 
     write_field(os, separator, "input", input);
     write_field(os, separator, "cells", cell_count);
+    if (data.sample_count() > 1) {
+        std::vector<std::string> sample_cells;
+        for (int sample = 0; sample < data.sample_count(); ++sample) {
+            sample_cells.push_back(std::to_string(
+                data.sample_starts[sample + 1] - data.sample_starts[sample]));
+        }
+        write_field(os, separator, "samples", data.sample_count());
+        write_field(os, separator, "sample_names", join_strings(data.sample_names));
+        write_field(os, separator, "sample_cells", join_strings(sample_cells));
+    }
     write_field(os, separator, "labels", data.label_names.size());
     write_field(os, separator, "frozen_cell_type", frozen_names);
     write_field(os, separator, "frozen_cell_types", frozen_names);
@@ -257,7 +267,14 @@ AnalysisConfig stage_config_of(const Dataset& data,
 
 }  // namespace
 
-Dataset load_data(const std::string& path) {
+namespace {
+
+struct RawSample {
+    std::vector<std::array<double, 2>> coords;
+    std::vector<std::string> labels;
+};
+
+RawSample read_cells(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) throw std::runtime_error("Cannot open input CSV: " + path);
 
@@ -278,8 +295,7 @@ Dataset load_data(const std::string& path) {
         throw std::runtime_error("CSV must contain X_centroid,Y_centroid,Cell_Type columns");
     }
 
-    std::vector<std::array<double, 2>> coords;
-    std::vector<std::string> raw_labels;
+    RawSample sample;
     const int required_col = std::max({col_x, col_y, col_ct});
     int row = 1;
     while (std::getline(f, line)) {
@@ -296,26 +312,52 @@ Dataset load_data(const std::string& path) {
         const std::string cell_type = trim(fields[col_ct]);
         if (lower_ascii(cell_type) == "unclassified") continue;
 
-        coords.push_back({std::stod(fields[col_x]), std::stod(fields[col_y])});
-        raw_labels.push_back(cell_type);
+        sample.coords.push_back({std::stod(fields[col_x]), std::stod(fields[col_y])});
+        sample.labels.push_back(cell_type);
     }
+    return sample;
+}
 
-    std::vector<std::string> names = raw_labels;
+}  // namespace
+
+Dataset load_samples(const std::vector<std::string>& paths) {
+    std::vector<RawSample> raw;
+    for (const std::string& path : paths) raw.push_back(read_cells(path));
+
+    // One label index shared by every sample: the sorted union of their types.
+    std::vector<std::string> names;
+    for (const RawSample& sample : raw) {
+        names.insert(names.end(), sample.labels.begin(), sample.labels.end());
+    }
     std::sort(names.begin(), names.end());
     names.erase(std::unique(names.begin(), names.end()), names.end());
-
     std::unordered_map<std::string, int> label_of;
     label_of.reserve(names.size());
     for (int i = 0; i < static_cast<int>(names.size()); ++i) label_of[names[i]] = i;
 
     Dataset data;
-    data.coords = std::move(coords);
     data.label_names = std::move(names);
-    data.labels.resize(raw_labels.size());
-    for (int i = 0; i < static_cast<int>(raw_labels.size()); ++i) {
-        data.labels[i] = label_of.at(raw_labels[i]);
+    for (int s = 0; s < static_cast<int>(raw.size()); ++s) {
+        data.sample_starts.push_back(static_cast<int>(data.labels.size()));
+        std::string name = std::filesystem::path(paths[s]).stem().string();
+        const std::string base_name = name;
+        for (int copy = 2; std::find(data.sample_names.begin(), data.sample_names.end(), name) !=
+                           data.sample_names.end(); ++copy) {
+            name = base_name + "#" + std::to_string(copy);
+        }
+        data.sample_names.push_back(name);
+        for (std::size_t i = 0; i < raw[s].labels.size(); ++i) {
+            data.coords.push_back(raw[s].coords[i]);
+            data.labels.push_back(label_of.at(raw[s].labels[i]));
+            data.samples.push_back(s);
+        }
     }
+    data.sample_starts.push_back(static_cast<int>(data.labels.size()));
     return data;
+}
+
+Dataset load_data(const std::string& path) {
+    return load_samples({path});
 }
 
 void write_text_file(const std::string& path,
@@ -363,6 +405,8 @@ void write_outputs(const std::string& out_dir,
     if (config.neighborhood_mode != NeighborhoodMode::Covering) {
         drop_stale("neighborhood_centers.csv");
     }
+    const bool several_samples = data.sample_count() > 1;
+    if (!several_samples) drop_stale("motif_samples.csv");
 
     {
         std::ofstream f = open_output_file(out_dir, "pattern.csv");
@@ -374,23 +418,28 @@ void write_outputs(const std::string& out_dir,
 
     if (config.neighborhood_mode == NeighborhoodMode::Covering) {
         std::ofstream f = open_output_file(out_dir, "neighborhood_centers.csv");
-        f << "center_index,cell_id,x,y,label\n";
+        f << "center_index,cell_id,x,y,label" << (several_samples ? ",sample" : "") << '\n';
         for (int i = 0; i < static_cast<int>(result.candidate_center_ids.size()); ++i) {
             const int cell = result.candidate_center_ids[i];
-            f << i << ',' << cell << ','
+            f << i << ',' << data.local_index(cell) << ','
               << data.coords[cell][0] << ',' << data.coords[cell][1] << ',';
             write_csv_text(f, data.label_names[data.labels[cell]]);
+            if (several_samples) f << ',' << data.sample_names[data.sample_of(cell)];
             f << '\n';
         }
     }
 
     {
         std::ofstream f = open_output_file(out_dir, "matches.csv");
-        f << "cell_id,x,y,label\n";
+        // cell_id is the row within the cell's own input file; with several
+        // samples the sample column says which file.
+        f << "cell_id,x,y,label" << (several_samples ? ",sample" : "") << '\n';
         for (int i = 0; i < static_cast<int>(selected.match_mask.size()); ++i) {
             if (!selected.match_mask[i]) continue;
-            f << i << ',' << data.coords[i][0] << ',' << data.coords[i][1] << ','
-              << data.label_names[data.labels[i]] << '\n';
+            f << data.local_index(i) << ',' << data.coords[i][0] << ',' << data.coords[i][1]
+              << ',' << data.label_names[data.labels[i]];
+            if (several_samples) f << ',' << data.sample_names[data.sample_of(i)];
+            f << '\n';
         }
     }
 
@@ -431,16 +480,37 @@ void write_outputs(const std::string& out_dir,
     if (config.statistic == MotifStatistic::MinP) {
         std::ofstream f = open_output_file(out_dir, "motif_significance.csv");
         f << "rank,observed_frequency,disjoint_support,null_mean,null_sd,lift,z_score,"
-             "p_raw,p_adjusted,significant,family_size,pattern\n";
+             "p_raw,p_adjusted,significant,"
+          << (several_samples ? "replicated_in," : "") << "family_size,pattern\n";
         f << std::setprecision(12);
         for (const MotifTest& test : result.motif_tests) {
             f << test.rank << ',' << test.observed << ',' << test.disjoint_support
               << ',' << test.null_mean << ',' << test.null_sd << ',' << test.lift << ',' << test.z_score << ','
               << test.p_value << ',' << test.p_value_adjusted << ','
-              << (test.significant ? "true" : "false") << ','
-              << result.candidate_family_size << ',';
+              << (test.significant ? "true" : "false") << ',';
+            if (several_samples) f << test.replicated_in << ',';
+            f << result.candidate_family_size << ',';
             write_pattern_string(f, data, test.pattern);
             f << '\n';
+        }
+    }
+
+    if (config.statistic == MotifStatistic::MinP && several_samples) {
+        // The same motifs sample by sample. Per-sample p-values are descriptive:
+        // the family-wise guarantee is carried by p_adjusted in
+        // motif_significance.csv, which pools all samples.
+        std::ofstream f = open_output_file(out_dir, "motif_samples.csv");
+        f << "rank,sample,observed_frequency,disjoint_support,null_mean,null_sd,lift,"
+             "p_raw,p_raw_below_alpha\n";
+        f << std::setprecision(12);
+        for (const MotifTest& test : result.motif_tests) {
+            for (int sample = 0; sample < static_cast<int>(test.per_sample.size()); ++sample) {
+                const SampleEvidence& e = test.per_sample[sample];
+                f << test.rank << ',' << data.sample_names[sample] << ',' << e.observed << ','
+                  << e.disjoint_support << ',' << e.null_mean << ',' << e.null_sd << ','
+                  << e.lift << ',' << e.p_value << ','
+                  << (e.p_value <= config.alpha ? "true" : "false") << '\n';
+            }
         }
     }
 

@@ -3,7 +3,8 @@ import csv, math, os, random
 
 DEV = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(DEV, "data")
-REAL = "../../data/PDAC_202602/annotated_cells/LSP31891_P181_rep1_annotated.csv"
+REAL = "../../data/PDAC_202602/annotated_cells/{}_P181_rep1_annotated.csv"
+PDAC_SAMPLES = ("LSP31891", "LSP31894", "LSP31895", "LSP31896")
 W, N, K = 3000.0, 4500, 6
 BASE = [0.35, 0.25, 0.15, 0.12, 0.08, 0.05]
 
@@ -59,9 +60,9 @@ def sparse(seed=5, count=700, extent=900.0, types=4):
             for _ in range(count)]
 
 
-def real_crop(half_width=4000.0):
-    """An 8000 x 8000 window of LSP31891, centred on the median cell."""
-    source = os.path.join(DEV, REAL)
+def real_crop(sample="LSP31891", half_width=4000.0):
+    """An 8000 x 8000 window of a PDAC sample, centred on the median cell."""
+    source = os.path.join(DEV, REAL.format(sample))
     cells = [c for c in csv.DictReader(open(source)) if c["Cell_Type"].lower() != "unclassified"]
     xs = sorted(float(c["X_centroid"]) for c in cells)
     ys = sorted(float(c["Y_centroid"]) for c in cells)
@@ -77,5 +78,8 @@ if __name__ == "__main__":
     print("sparse.csv", write("sparse.csv", sparse()))
     try:
         print("real_crop.csv", write("real_crop.csv", real_crop()))
+        # One crop per sample, for multi-sample runs (dev/README.md).
+        for sample in PDAC_SAMPLES:
+            print(f"{sample}.csv", write(f"{sample}.csv", real_crop(sample)))
     except FileNotFoundError:
-        print("real_crop.csv skipped: PDAC data not found at", REAL)
+        print("PDAC crops skipped: data not found at", REAL.format("*"))

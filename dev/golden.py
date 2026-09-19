@@ -80,6 +80,19 @@ def cases():
                                      "--statistic", "minp", "--min-support", "40",
                                      "--split-size", "300", "--max-motifs", "4",
                                      "--permutations", "9", "--seed", "7", "--threads", "2"]
+    # Several samples in one run: pooled family, pooled test, per-sample breakdown.
+    c["two_samples_minp_block"] = ["--input", DATA["niches"], "--input", DATA["compart"],
+                                   "--radius", "100", "--rho", "0.05", "--statistic", "minp",
+                                   "--min-support", "5", "--split-size", "1000", "--max-motifs", "5",
+                                   "--permutations", "49", "--seed", "5", "--threads", "3",
+                                   "--null-model", "block", "--block-size", "500"]
+    c["three_samples_minp_global_js"] = ["--input", DATA["niches"], "--input", DATA["compart"],
+                                         "--input", DATA["sparse"], "--radius", "80", "--metric", "js",
+                                         "--rho", "0.1", "--statistic", "minp", "--min-support", "3",
+                                         "--split-size", "700", "--max-motifs", "4",
+                                         "--permutations", "29", "--seed", "9", "--threads", "2"]
+    c["err_samples_without_minp"] = ["--input", DATA["tiny"], "--input", DATA["tiny"],
+                                     "--permutations", "1", "--no-outdir"]
     c["niches_frozen2"] = ["--input", DATA["niches"], "--radius", "100", "--permutations", "9",
                            "--max-motifs", "3", "--freeze-cell-type", "T0", "--freeze-cell-type", "T1",
                            "--null-model", "block", "--block-size", "300"]

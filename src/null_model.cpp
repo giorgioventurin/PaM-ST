@@ -89,18 +89,27 @@ LabelShufflePlan make_label_shuffle_plan(
 
     LabelShufflePlan plan;
     if (config.null_model == NullModel::Global) {
-        if (!permutable_cells.empty()) plan.groups.push_back(permutable_cells);
+        // One group per sample: labels are never exchanged between tissues.
+        std::vector<std::vector<int>> by_sample(data.sample_count());
+        for (const int cell : permutable_cells) by_sample[data.sample_of(cell)].push_back(cell);
+        for (auto& cells : by_sample) {
+            if (!cells.empty()) plan.groups.push_back(std::move(cells));
+        }
     } else {
         if (data.coords.size() != n) {
             throw std::runtime_error("Coordinate and label counts differ");
         }
-        using Tile = std::array<std::int64_t, 2>;
+        // Tiles are keyed by sample as well, since each sample has its own
+        // coordinate system and the same (x, y) tile means different places.
+        using Tile = std::array<std::int64_t, 3>;
         std::map<Tile, std::vector<int>> tiles;
         std::vector<Tile> cell_tiles;
         cell_tiles.reserve(n);
-        for (const auto& coordinate : data.coords) {
-            cell_tiles.push_back(grid_tile(coordinate, config.block_size,
-                                           config.block_origin_x, config.block_origin_y));
+        for (std::size_t cell = 0; cell < n; ++cell) {
+            const auto& coordinate = data.coords[cell];
+            const std::array<std::int64_t, 2> tile = grid_tile(
+                coordinate, config.block_size, config.block_origin_x, config.block_origin_y);
+            cell_tiles.push_back({data.sample_of(static_cast<int>(cell)), tile[0], tile[1]});
             tiles.try_emplace(cell_tiles.back());
             validate_neighbor_grid_range(coordinate, config.radius);
         }

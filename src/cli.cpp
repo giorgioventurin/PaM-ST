@@ -31,6 +31,8 @@ void usage(const char* program) {
     std::cerr
         << "Usage: " << program << " --input cells.csv [options]\n"
         << "Options:\n"
+        << "  --input FILE        Cell table; repeat to analyse several samples "
+           "together (minp only)\n"
         << "  --radius R          Spatial radius (default: 300)\n"
         << "  --rho RHO           Fixed normalized-composition tolerance (default: 0.05)\n"
         << "  --metric NAME       Distance metric: l2 or js (default: l2)\n"
@@ -95,7 +97,7 @@ CliOptions parse_args(const int argc, char** argv) {
             return argv[++i];
         };
 
-        if (key == "--input") options.input = need_value(key);
+        if (key == "--input") options.inputs.push_back(need_value(key));
         else if (key == "--output-dir") options.output_dir = need_value(key);
         else if (key == "--output-file") options.output_file = need_value(key);
         else if (key == "--radius") config.radius = std::stod(need_value(key));
@@ -182,7 +184,13 @@ CliOptions parse_args(const int argc, char** argv) {
         }
     }
 
-    if (options.input.empty()) throw std::runtime_error("--input is required");
+    if (options.inputs.empty()) throw std::runtime_error("--input is required");
+    for (std::size_t i = 0; i < options.inputs.size(); ++i) {
+        options.input += (i ? ";" : "") + options.inputs[i];
+    }
+    if (options.inputs.size() > 1 && config.statistic != MotifStatistic::MinP) {
+        throw std::runtime_error("Several --input files require --statistic minp");
+    }
     if (block_option_set && config.null_model != NullModel::Block) {
         throw std::runtime_error("Block options require --null-model block");
     }

@@ -29,11 +29,19 @@ int main(const int argc, char** argv) {
 
         Timings timings;
         const auto load_start = Clock::now();
-        const Dataset data = load_data(options.input);
+        const Dataset data = load_samples(options.inputs);
         timings.load_seconds = elapsed_seconds(load_start);
 
         std::cerr << "Cells: " << data.labels.size() << '\n';
         std::cerr << "Labels: " << data.label_names.size() << '\n';
+        if (data.sample_count() > 1) {
+            std::cerr << "Samples: " << data.sample_count() << " (";
+            for (int s = 0; s < data.sample_count(); ++s) {
+                std::cerr << (s ? ", " : "") << data.sample_names[s] << '='
+                          << data.sample_starts[s + 1] - data.sample_starts[s];
+            }
+            std::cerr << ")\n";
+        }
 
         // The text report goes to stdout and, when requested, to a file.
         auto emit = [&](const std::function<void(std::ostream&)>& report) {

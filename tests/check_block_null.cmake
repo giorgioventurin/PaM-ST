@@ -2,10 +2,14 @@ if(NOT DEFINED PAM_ST OR NOT DEFINED INPUT OR NOT DEFINED FROZEN_INPUT OR NOT DE
   message(FATAL_ERROR "PAM_ST, INPUT, FROZEN_INPUT, and OUT_BASE are required")
 endif()
 
+# Each case reads exactly one input: a repeated --input now means several
+# samples, so cases that need a different file change case_input instead.
+set(case_input "${INPUT}")
+
 function(run_case name)
   file(REMOVE_RECURSE "${OUT_BASE}/${name}")
   execute_process(
-    COMMAND "${PAM_ST}" --input "${INPUT}" --radius 1 --rho 0
+    COMMAND "${PAM_ST}" --input "${case_input}" --radius 1 --rho 0
       --metric l2 --permutations 19 --max-motifs 3 --seed 37 --threads 1
       --output-dir "${OUT_BASE}/${name}" ${ARGN}
     RESULT_VARIABLE result OUTPUT_VARIABLE stdout ERROR_VARIABLE stderr
@@ -114,7 +118,8 @@ endforeach()
 # must use exactly the same conditional block permutation population and RNG.
 # null_rank_counts.csv holds every rank's null draws. null_max.csv is not
 # compared: a standalone run stores its selected rank there, a sweep stage rank 1.
-set(frozen_settings --input "${FROZEN_INPUT}" --max-motifs 2
+set(case_input "${FROZEN_INPUT}")
+set(frozen_settings --max-motifs 2
   --null-model block --block-size 20 --neighborhood-mode covering)
 run_case(freeze_none ${frozen_settings})
 run_case(freeze_manual ${frozen_settings} --freeze-cell-type P)
@@ -124,6 +129,8 @@ assert_same_files(freeze_none freeze_sweep/stage_00_none
   motif_tests.csv null_rank_counts.csv)
 assert_same_files(freeze_manual freeze_sweep/stage_01_top_1
   motif_tests.csv null_rank_counts.csv)
+
+set(case_input "${INPUT}")
 
 # FewRS has a distinct observed-candidate path and null statistic.
 set(fewrs_settings --error-control fewrs-fdr --permutations auto --max-motifs 3
