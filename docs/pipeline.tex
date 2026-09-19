@@ -3,6 +3,7 @@
 \usepackage[margin=2.5cm]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{booktabs}
+\usepackage{longtable}
 \usepackage{microtype}
 \usepackage{enumitem}
 \usepackage[dvipsnames]{xcolor}
@@ -28,18 +29,28 @@
   colbacktitle=Gray!15,attach boxed title to top left={xshift=6pt,yshift=-2pt},
   boxed title style={boxrule=0pt,arc=1pt}}
 
+% Every symbol below is defined in the text; Appendix A lists where.
 \newcommand{\cells}{\mathcal{C}}
 \newcommand{\types}{\mathcal{T}}
 \newcommand{\lab}{\ell}
 \newcommand{\obs}{\mathrm{obs}}
-\newcommand{\Nb}[1]{N_{#1}}
-\newcommand{\ind}[1]{\mathbf{1}\!\left[#1\right]}
+\newcommand{\Nb}[1]{\mathcal{N}_{#1}}
 \newcommand{\Real}{\mathbb{R}}
+\newcommand{\Int}{\mathbb{Z}}
 \newcommand{\Nat}{\mathbb{Z}_{\ge 0}}
+\newcommand{\Sym}{\mathfrak{S}}
+\newcommand{\tiles}{\mathcal{W}}
+\newcommand{\lift}{\operatorname{lift}}
+\newcommand{\rep}{\operatorname{rep}}
+\newcommand{\JS}{\operatorname{JS}}
+\newcommand{\minp}{\underline{p}}
+\newcommand{\mtypes}{m_{\mathrm{types}}}
+\newcommand{\mcells}{m_{\mathrm{cells}}}
+\newcommand{\mset}[1]{\{\!\{#1\}\!\}}
 
 \title{PaM-ST: what the pipeline does, and why it can be trusted}
 \author{}
-\date{18 September 2026}
+\date{19 September 2026}
 
 \begin{document}
 \maketitle
@@ -53,10 +64,67 @@ worked example with exact numbers. The plain-language boxes can be read on
 their own; the definitions and propositions state precisely what the code
 implements and under which assumptions its $p$-values are valid.
 Section~\ref{sec:evidence} reports the simulations that check those
-guarantees, and Section~\ref{sec:real} a run on four PDAC tissues.
+guarantees, and Section~\ref{sec:real} a run on four PDAC tissues. Every
+symbol is defined where it first appears; Section~\ref{sec:notation} gives the
+general notation and Appendix~\ref{app:symbols} lists every symbol with the
+place that defines it.
 \end{abstract}
 
 \tableofcontents
+
+% =====================================================================
+\section{Notation}
+\label{sec:notation}
+
+\begin{plain}
+Maths is a short-hand. Each letter that stands for something in this pipeline
+--- a cell, a count, a number of shuffles --- is explained where it first
+appears. This section collects the general-purpose symbols that the rest of
+the note uses without further comment.
+\end{plain}
+
+\begin{description}[style=unboxed,leftmargin=0pt,itemsep=3pt]
+  \item[Sets.] $\{y:\text{condition}\}$ is the set of all $y$ satisfying the
+    condition. $|A|$ is the number of elements of a finite set $A$;
+    $A\cap A'$, $A\cup A'$ and $A\subseteq A'$ are intersection, union and
+    inclusion; $\emptyset$ is the empty set; $\bigsqcup_s A_s$ is a union of
+    sets that do not overlap. A \emph{multiset} is a collection in which
+    repetitions count, written $\mset{\dots}$; a \emph{partition} of $A$ is a
+    collection of non-empty, non-overlapping subsets whose union is $A$.
+  \item[Numbers.] $\Real$ is the real numbers and $\Real^2$ the plane;
+    $\Int$ is the integers and $\Nat=\{0,1,2,\dots\}$. $\Nat^K$ is the set of
+    vectors of $K$ non-negative integers; for such a vector $h$, $h[t]$ is its
+    $t$-th entry. $\lfloor y\rfloor$ is the largest integer not above $y$, and
+    $y\bmod 2$ the remainder of the integer $y$ after division by 2.
+    $\gcd(h)$ is the greatest common divisor of the entries of $h$.
+    For integers $0\le w\le m$, $m!=1\cdot2\cdots m$ (with $0!=1$), and
+    $\binom{m}{w}=m!/(w!\,(m-w)!)$ is the number of ways to choose $w$ of $m$
+    items. $\ln$ is the natural logarithm, with the
+    convention $0\ln0=0$; $\arcsin$ is the inverse sine.
+  \item[Length.] For $y=(y_1,\dots,y_K)\in\Real^K$,
+    $\lVert y\rVert_2=\sqrt{y_1^2+\dots+y_K^2}$ is its Euclidean length.
+  \item[Sums and extremes.] $\sum$ and $\prod$ are sums and products;
+    $\min_{j\ge k}$ and $\max_{j\le k}$ are the smallest and largest value
+    over the indices shown.
+  \item[Restriction.] For a labelling $\lab$ (Definition~\ref{def:tissue})
+    and a set of cells $A$, $\lab|_A$ is the list of labels of the cells in
+    $A$ only.
+  \item[Permutations.] $\Sym(A)$ is the set of permutations of a finite set
+    $A$, i.e.\ one-to-one maps $\psi$ of $A$ onto itself. A permutation $\psi$
+    of a set of cells moves labels: $(\psi\lab)_{\psi(i)}=\lab_i$, and cells
+    outside the set keep their label. For non-overlapping sets
+    $A_1,\dots,A_G$, $\prod_g\Sym(A_g)$ is the set of permutations that map
+    each $A_g$ onto itself.
+  \item[Probability.] $\Pr(E)$ is the probability of the event $E$ under the
+    null model being discussed. \emph{i.i.d.}\ means independent and
+    identically distributed. Random quantities $Y_1,\dots,Y_m$ are
+    \emph{exchangeable} when their joint distribution does not change if
+    their indices are permuted.
+  \item[Approximation and cost.] $\approx$ is ``approximately equal'' and
+    $\gtrsim$ ``at least approximately''. $O(f)$ is a cost at most a constant
+    times $f$.
+  \item[Logic.] $\exists$ is ``there exists''; $y:=\dots$ defines $y$.
+\end{description}
 
 % =====================================================================
 \section{The picture: cells, circles and recipes}
@@ -73,64 +141,93 @@ back.
 \end{plain}
 
 \begin{definition}[Tissue]
-A tissue is a finite set of cells $\cells=\{1,\dots,n\}$ with positions
-$x_i\in\Real^2$ and labels $\lab_i\in\types=\{1,\dots,K\}$; the labelling is
-$\lab=(\lab_1,\dots,\lab_n)$. Cells annotated \texttt{unclassified} are removed
-before analysis. Positions never change; every null model acts on $\lab$ alone.
+\label{def:tissue}
+A tissue is a finite set of $n$ cells $\cells=\{1,\dots,n\}$. Cell $i$ has a
+position $x_i=(x_{i,1},x_{i,2})\in\Real^2$ and a label $\lab_i\in\types$,
+where $\types=\{1,\dots,K\}$ numbers the $K$ cell types. A \emph{labelling} is
+the list $\lab=(\lab_1,\dots,\lab_n)$; the one read from the data is the
+\emph{observed labelling} $\lab^{\obs}$. Cells annotated
+\texttt{unclassified} are removed before analysis. Positions never change;
+the null models of Section~\ref{sec:null} produce other labellings of the
+same positions.
 \end{definition}
 
 \begin{definition}[Neighbourhood and composition]
-For a radius $r>0$, $\Nb{i}=\{j\in\cells:\lVert x_j-x_i\rVert_2\le r\}$, which
-contains $i$. Its composition under $\lab$ is the count vector $h_i(\lab)\in\Nat^K$,
-$h_i(\lab)[t]=|\{j\in \Nb{i}:\lab_j=t\}|$.
+\label{def:nbhd}
+For a radius $r>0$, the neighbourhood of cell $i$ is
+$\Nb{i}=\{j\in\cells:\lVert x_j-x_i\rVert_2\le r\}$, which contains $i$
+itself. Its \emph{composition} under a labelling $\lab$ is the count vector
+$h_i(\lab)\in\Nat^K$ with $h_i(\lab)[t]=|\{j\in \Nb{i}:\lab_j=t\}|$ for
+$t\in\types$. A cell used this way is called a \emph{centre}.
 \end{definition}
 
 \begin{definition}[Matching]
+\label{def:match}
+Let $h,h'\in\Nat^K$ be count vectors that are not all zero.
 With \texttt{--metric l2}, write $u(h)=h/\lVert h\rVert_2$ and
 $d(h,h')=\lVert u(h)-u(h')\rVert_2\in[0,\sqrt2]$, the chord distance between
-directions. With \texttt{--metric js},
+the two directions. With \texttt{--metric js}, write
+$\phi(h)=h/\sum_{t=1}^K h[t]$ for the proportions,
+$\operatorname{Ent}(\phi)=-\sum_{t=1}^K\phi[t]\ln\phi[t]$ for their entropy, and
 \[
-  d(h,h')=\sqrt{\operatorname{JS}\bigl(p(h),p(h')\bigr)},\qquad p(h)=h/\mathbf 1^\top h,
+  \JS(\phi,\phi')=\operatorname{Ent}\bigl(\tfrac12(\phi+\phi')\bigr)-\tfrac12\bigl(\operatorname{Ent}(\phi)+\operatorname{Ent}(\phi')\bigr)\in[0,\ln2],
+  \qquad
+  d(h,h')=\sqrt{\JS\bigl(\phi(h),\phi(h')\bigr)},
 \]
-the square root of the Jensen--Shannon divergence between proportions. Two compositions \emph{match} when
-$d\le\rho$; for $\rho=0$ this is exact proportional equality.
+the square root of the Jensen--Shannon divergence. For a tolerance
+$\rho\ge0$, $h$ and $h'$ \emph{match} when $d(h,h')\le\rho$; for $\rho=0$
+this is exact proportional equality.
+\end{definition}
+
+\begin{definition}[Composition classes]
+\label{def:classes}
+Two count vectors are \emph{equivalent} when they are proportional, i.e.\
+$h/\gcd(h)=h'/\gcd(h')$; then $d(h,h')=0$ under both metrics, so any third
+vector matches both or neither. For a set of centres $S\subseteq\cells$ and a
+labelling $\lab$, the \emph{classes} of $S$ are the groups of equivalent
+vectors among $\{h_i(\lab):i\in S\}$, numbered $q=1,\dots,Q$ in order of first
+appearance (smallest centre index). The \emph{representative} $\hat h_q$ of
+class $q$ is $h_i(\lab)$ for the smallest centre $i\in S$ in that class.
 \end{definition}
 
 \begin{definition}[Frequency and disjoint support]
 \label{def:freq}
-For a query vector $v$ and a set of centres $S$, the \emph{frequency} is
+For a \emph{query vector} $v\in\Nat^K$ (not all zero), a set of centres
+$S\subseteq\cells$ and a labelling $\lab$, the \emph{frequency} is
 $N(v;\lab,S)=|\{i\in S:d(h_i(\lab),v)\le\rho\}|$. The \emph{disjoint support}
-$D(v;\lab,S)$ is the size of the set built by taking matching centres in index
-order and keeping each one whose neighbourhood shares no cell with those
-already kept.
+$D(v;\lab,S)$ is found by going through the matching centres of $S$ in
+increasing index order and keeping a centre when its neighbourhood shares no
+cell with the neighbourhoods of the centres already kept; $D$ is the number
+kept.
 \end{definition}
 
 Frequency counts overlapping circles separately, so one dense clump counts many
-times; disjoint support counts it once. The implementation groups identical
-compositions (equal up to a common divisor) into classes and answers one ball
-query per class with a KD-tree ($\ell_2$) or a vantage-point tree (JS), which
-gives the same $N$.
+times; disjoint support counts it once. Because $d(h_i(\lab),v)$ depends only
+on the class of $h_i(\lab)$, the implementation answers one query per class,
+with a KD-tree for the chord distance and a vantage-point tree for
+Jensen--Shannon, which gives the same $N$.
 
 \begin{example}{how close is ``almost the same''?}
-With two types (red, blue) and \texttt{--rho 0.05}:
+With two types, counts written as (red, blue), and \texttt{--rho 0.05}:
 \begin{center}
 \begin{tabular}{lll}
 \toprule
-Recipe & Compared with $(5,3)$ & Match? \\
+Recipe & Chord distance $d$ to $(5,3)$ & Match? \\
 \midrule
-$(10,6)$ & $d=0$ (same mix, twice the size) & yes \\
-$(6,3)$ & $d=0.077$ & no \\
-$(5,4)$ & $d=0.134$ & no \\
-$(4,4)$ & $d=0.244$ & no \\
+$(10,6)$ & $0$ (same mix, twice the size) & yes \\
+$(6,3)$ & $0.077$ & no \\
+$(5,4)$ & $0.134$ & no \\
+$(4,4)$ & $0.244$ & no \\
 \bottomrule
 \end{tabular}
 \end{center}
-A tolerance of $\rho=0.05$ is an angle of $2.87^\circ$ between directions: a
-tight match. It also explains an old artefact. The recipe \emph{20
-fibroblasts, 1 immune cell} sits at distance $0.04995$ from \emph{pure
-fibroblasts}, just inside the tolerance, so it matches every pure-fibroblast
-neighbourhood --- which is why the original frequency test kept
-reporting \texttt{Other\_fibroblasts:20; Other\_immune:1}.
+Two directions at an angle $\theta$ have chord $2\sin(\theta/2)$, so
+$\rho=0.05$ allows an angle of $2\arcsin(0.025)=2.87^\circ$: a tight match.
+It also explains an old artefact. The recipe \emph{20 fibroblasts, 1 immune
+cell} sits at distance $0.04995$ from \emph{pure fibroblasts}, just inside the
+tolerance, so it matches every pure-fibroblast neighbourhood --- which is why
+the original frequency test kept reporting
+\texttt{Other\_fibroblasts:20; Other\_immune:1}.
 \end{example}
 
 % =====================================================================
@@ -149,51 +246,61 @@ up.
 \end{plain}
 
 \begin{definition}[Block null]
-Fix a tile side $L>0$ and origin $o$. The tile of $x$ is
-$\gamma_L(x)=(\lfloor (x_1-o_1)/L\rfloor,\lfloor (x_2-o_2)/L\rfloor)$, inducing a
-partition $\mathcal B=\{B_1,\dots,B_G\}$ of $\cells$. Under $H_0^{\mathrm{blk}}$,
-conditional on positions and on the label multiset of every tile, $\lab$ is
-uniform over $\Pi_{\mathcal B}=\prod_g\mathfrak S(B_g)$ acting on labels. The
-global null is the special case $G=1$.
+\label{def:block}
+Fix a tile side $L>0$ and a grid origin $o=(o_1,o_2)\in\Real^2$. The tile
+index of a point $\xi=(\xi_1,\xi_2)\in\Real^2$ is
+$\gamma_L(\xi)=\bigl(\lfloor (\xi_1-o_1)/L\rfloor,\lfloor (\xi_2-o_2)/L\rfloor\bigr)\in\Int^2$.
+Cells whose positions share a tile index form a \emph{tile}; the $G$ non-empty
+tiles $W_1,\dots,W_G$ partition $\cells$, and $\tiles=\{W_1,\dots,W_G\}$. Let
+$\Pi_{\tiles}=\prod_{g=1}^G\Sym(W_g)$, the permutations that keep every cell
+in its tile. The \emph{block null hypothesis} $H_0^{\mathrm{blk}}$ states
+that, conditional on the positions and on the label multiset
+$\mset{\lab^{\obs}_i:i\in W_g}$ of every tile, $\lab^{\obs}$ is uniformly
+distributed over $\{\psi\lab^{\obs}:\psi\in\Pi_{\tiles}\}$. The global null is
+the case $G=1$: a single tile holding the whole tissue.
 \end{definition}
 
-\begin{remark}[The draws are independent]
-The code applies a fresh uniform within-tile permutation to the previous draw
-rather than to $\lab^{\obs}$. A uniform element of $\Pi_{\mathcal B}$ composed
-with any fixed arrangement is again uniform and independent of it, so the draws
-$\lab^{(1)},\dots,\lab^{(B)}$ are i.i.d.\ from the null.
+\begin{remark}[How the pretend maps are drawn]
+\label{rem:draws}
+Let $B$ be the number of permutation draws (\texttt{--permutations}). The
+code sets $\lab^{(0)}=\lab^{\obs}$ and $\lab^{(b)}=\psi_b\lab^{(b-1)}$ for
+$b=1,\dots,B$, with $\psi_1,\dots,\psi_B$ independent and uniform on
+$\Pi_{\tiles}$. The product $\psi_b\cdots\psi_1$ is again uniform on
+$\Pi_{\tiles}$ and independent of $\psi_{b-1}\cdots\psi_1$, so the draws
+$\lab^{(1)},\dots,\lab^{(B)}$ are i.i.d.\ and uniform over the rearrangements
+allowed by the null.
 \end{remark}
 
 \begin{example}{a tissue of eight cells}
 \begin{center}
 \begin{tikzpicture}[x=0.9cm,y=0.9cm,
-    cell/.style={circle,draw=black!60,minimum size=0.55cm,inner sep=0pt,font=\scriptsize\bfseries}]
-  \foreach \ox/\title in {0/observed, 6.2/one pretend map} {
+    cell/.style={circle,draw=black!60,minimum size=0.5cm,inner sep=0pt}]
+  \foreach \ox/\heading in {0/observed, 6.2/one pretend map} {
     \draw[black!50] (\ox,0) rectangle ++(2.4,2.4);
     \draw[black!50] (\ox+2.4,0) rectangle ++(2.4,2.4);
-    \node[font=\small] at (\ox+2.4,2.85) {\title};
+    \node[font=\small] at (\ox+2.4,2.85) {\heading};
     \node[font=\scriptsize,black!60] at (\ox+1.2,-0.35) {tile 1};
     \node[font=\scriptsize,black!60] at (\ox+3.6,-0.35) {tile 2};
   }
   % observed
-  \node[cell,fill=Red!45] at (0.6,1.8) {R};   \node[cell,fill=Red!45] at (1.8,1.8) {R};
-  \node[cell,fill=Red!45] at (0.6,0.6) {R};   \node[cell,fill=Blue!35] at (1.8,0.6) {B};
-  \node[cell,fill=Blue!35] at (3.0,1.8) {B};  \node[cell,fill=Blue!35] at (4.2,1.8) {B};
-  \node[cell,fill=Green!40] at (3.0,0.6) {G}; \node[cell,fill=Green!40] at (4.2,0.6) {G};
+  \node[cell,fill=Red!55] at (0.6,1.8) {};   \node[cell,fill=Red!55] at (1.8,1.8) {};
+  \node[cell,fill=Red!55] at (0.6,0.6) {};   \node[cell,fill=Blue!45] at (1.8,0.6) {};
+  \node[cell,fill=Blue!45] at (3.0,1.8) {};  \node[cell,fill=Blue!45] at (4.2,1.8) {};
+  \node[cell,fill=Green!50] at (3.0,0.6) {}; \node[cell,fill=Green!50] at (4.2,0.6) {};
   % shuffled within tiles
-  \node[cell,fill=Blue!35] at (6.8,1.8) {B};  \node[cell,fill=Red!45] at (8.0,1.8) {R};
-  \node[cell,fill=Red!45] at (6.8,0.6) {R};   \node[cell,fill=Red!45] at (8.0,0.6) {R};
-  \node[cell,fill=Green!40] at (9.2,1.8) {G}; \node[cell,fill=Blue!35] at (10.4,1.8) {B};
-  \node[cell,fill=Blue!35] at (9.2,0.6) {B};  \node[cell,fill=Green!40] at (10.4,0.6) {G};
+  \node[cell,fill=Blue!45] at (6.8,1.8) {};  \node[cell,fill=Red!55] at (8.0,1.8) {};
+  \node[cell,fill=Red!55] at (6.8,0.6) {};   \node[cell,fill=Red!55] at (8.0,0.6) {};
+  \node[cell,fill=Green!50] at (9.2,1.8) {}; \node[cell,fill=Blue!45] at (10.4,1.8) {};
+  \node[cell,fill=Blue!45] at (9.2,0.6) {};  \node[cell,fill=Green!50] at (10.4,0.6) {};
   \draw[->,thick,black!60] (5.1,1.2) -- (6.0,1.2);
 \end{tikzpicture}
 \end{center}
-Tile 1 holds three red and one blue; tile 2 two blue and two green. The block
-null allows $\binom41\binom42=4\times6=24$ labellings, each equally likely, and
-every one keeps three red and one blue in tile 1. The global null would allow
-$8!/(3!\,3!\,2!)=560$ labellings, including ones that move every red cell into
-tile 2. The block null is the stricter comparison: it forgives the tissue for
-having regions and asks only about the arrangement inside them.
+Tile 1 holds three red cells and one blue; tile 2 two blue and two green. The
+block null allows $\binom41\binom42=4\times6=24$ labellings, each equally
+likely, and every one keeps three red and one blue in tile 1. The global null
+would allow $8!/(3!\,3!\,2!)=560$ labellings, including ones that move every
+red cell into tile 2. The block null is the stricter comparison: it forgives
+the tissue for having regions and asks only about the arrangement inside them.
 \end{example}
 
 % =====================================================================
@@ -211,35 +318,55 @@ chance happens only one time in $B+1$.
 
 \begin{definition}[Pooled-rank $p$-value]
 \label{def:p}
-For a fixed query vector $v$, let $N^{\obs}=N(v;\lab^{\obs},S)$ and
-$N^{(b)}=N(v;\lab^{(b)},S)$ for $b=1,\dots,B$. Pool the $B+1$ values into
-$\mathcal P=\{N^{\obs},N^{(1)},\dots,N^{(B)}\}$ and let
-$R(y)=|\{z\in\mathcal P:z\ge y\}|$. Then
+Fix a query vector $v$ and a set of centres $S$. Let
+$N^{(b)}=N(v;\lab^{(b)},S)$ for $b=0,1,\dots,B$, and write
+$N^{\obs}=N^{(0)}$ for the observed frequency. For a number $y$, let
+$R(y)=|\{b\in\{0,\dots,B\}:N^{(b)}\ge y\}|$ count how many of the $B+1$
+values, repetitions included, are at least $y$. Then
 \[
-  p=\frac{R(N^{\obs})}{B+1}=\frac{1+|\{b:N^{(b)}\ge N^{\obs}\}|}{B+1},
+  p=\frac{R(N^{\obs})}{B+1}=\frac{1+|\{b\in\{1,\dots,B\}:N^{(b)}\ge N^{\obs}\}|}{B+1},
   \qquad
-  p^{(b)}=\frac{R(N^{(b)})}{B+1}.
+  p^{(b)}=\frac{R(N^{(b)})}{B+1}\quad(b=1,\dots,B).
 \]
+$p$ is the $p$-value of the observation; $p^{(b)}$ scores draw $b$ in the same
+way and is used in Section~\ref{sec:wy}.
+\end{definition}
+
+\begin{definition}[Effect sizes]
+\label{def:effect}
+With the notation of Definition~\ref{def:p}, the null mean and standard
+deviation are $\bar N=\frac1B\sum_{b=1}^B N^{(b)}$ and
+$\hat s=\bigl(\frac1B\sum_{b=1}^B(N^{(b)}-\bar N)^2\bigr)^{1/2}$. The
+\emph{lift} is $\lift=N^{\obs}/\bar N$, set to $\infty$ when
+$\bar N=0<N^{\obs}$ and to $1$ when both are $0$. The \emph{$z$-score} is
+$z=(N^{\obs}-\bar N)/\hat s$, set to $\pm\infty$ when $\hat s=0$ and
+$N^{\obs}\ne\bar N$, and to $0$ when $\hat s=0$ and $N^{\obs}=\bar N$.
 \end{definition}
 
 \begin{proposition}[Validity]
 \label{prop:valid}
-If $N^{\obs},N^{(1)},\dots,N^{(B)}$ are exchangeable, then
-$\Pr(p\le\alpha)\le\alpha$ for every $\alpha\in(0,1)$, with equality at
-multiples of $1/(B+1)$ when ties have probability zero.
+If $N^{(0)},N^{(1)},\dots,N^{(B)}$ are exchangeable, then
+$\Pr(p\le\alpha)\le\alpha$ for every level $\alpha\in(0,1)$, with equality at
+multiples of $1/(B+1)$ when ties have probability zero. Under
+$H_0^{\mathrm{blk}}$ they are exchangeable.
 \end{proposition}
 
 \begin{proof}
+Under $H_0^{\mathrm{blk}}$, $\lab^{\obs}$ is uniform over the allowed
+rearrangements and, by Remark~\ref{rem:draws}, so is each draw, independently;
+the $B+1$ labellings are therefore i.i.d.\ and the counts exchangeable.
 Exchangeability makes the rank of $N^{\obs}$ among the $B+1$ values uniform
-(ties only make $R$ larger), so $\Pr(R(N^{\obs})\le k)\le k/(B+1)$.
+(ties only make $R$ larger), so $\Pr\bigl(R(N^{\obs})\le k\bigr)\le k/(B+1)$ for
+every integer $k=1,\dots,B+1$; take $k=\lfloor\alpha(B+1)\rfloor$.
 \end{proof}
 
 \begin{example}{nine pretend maps}
-A recipe appears 12 times on the real map. On nine pretend maps it appears
+A recipe appears 12 times on the real map. On $B=9$ pretend maps it appears
 $4,6,3,5,7,2,4,6,5$ times. None reaches 12, so $R(12)=1$ and
 $p=1/10=0.1$. That is the smallest $p$ nine maps can ever give: to show that
 something happens less than once in a thousand by chance you need thousands of
-pretend maps (Section~\ref{sec:budget}).
+pretend maps (Section~\ref{sec:budget}). Here $\bar N=42/9\approx4.7$, so the
+lift is $12/4.7\approx2.6$.
 \end{example}
 
 % =====================================================================
@@ -249,11 +376,11 @@ pretend maps (Section~\ref{sec:budget}).
 \begin{plain}
 If you pick a recipe \emph{because} you saw it a lot, it will of course look
 common --- like shooting an arrow and then drawing the target around it. To
-avoid this we colour the map like a chessboard. The black squares are used to
+avoid this we colour the map like a chessboard. The grey squares are used to
 \emph{choose} which recipes to test, and the white squares only to
 \emph{check} them. A circle is used only if it fits entirely inside its own
 square, so a checking circle can never share a marble with a choosing one. And
-the pretend maps only shuffle stickers on the white squares: the black squares
+the pretend maps only shuffle stickers on the white squares: the grey squares
 stay exactly as they were when the recipes were chosen.
 \end{plain}
 
@@ -276,52 +403,73 @@ stay exactly as they were when the recipes were chosen.
 \end{center}
 
 \begin{definition}[Checkerboard split]
-Fix a split side $L_s>2r$. For cell $i$ let $\gamma_{L_s}(x_i)=(a,b)$ with lower
-corner $c(i)$. Cell $i$ is \emph{interior} when
-$\min_k\min(x_{ik}-c_k(i),\,c_k(i)+L_s-x_{ik})\ge r$, and its parity is
-$\pi(i)=(a+b)\bmod 2$. Selection centres are $S_0=\{i\text{ interior}:\pi(i)=0\}$,
-testing centres $S_1=\{i\text{ interior}:\pi(i)=1\}$. Write $A_0$, $A_1$ for the
-cells lying in even and odd split tiles.
+\label{def:split}
+Fix a split tile side $\Lambda>2r$ (\texttt{--split-size}). The split grid has
+the origin $o$ of Definition~\ref{def:block} under the block null and origin
+$(0,0)$ under the global null. For cell $i$ let
+$(a_{i,1},a_{i,2})=\gamma_\Lambda(x_i)$ be its split tile index. Cell $i$ is
+\emph{interior} when its circle fits inside its split tile:
+\[
+  o_e+a_{i,e}\Lambda+r\ \le\ x_{i,e}\ \le\ o_e+(a_{i,e}+1)\Lambda-r
+  \qquad\text{for both coordinates } e=1,2.
+\]
+Its \emph{parity} is $\pi(i)=(a_{i,1}+a_{i,2})\bmod 2$. The selection centres
+are $S_0=\{i\text{ interior}:\pi(i)=0\}$ and the testing centres
+$S_1=\{i\text{ interior}:\pi(i)=1\}$. The selection half
+$A_0=\{i\in\cells:\pi(i)=0\}$ and the testing half
+$A_1=\{i\in\cells:\pi(i)=1\}$ contain all cells, interior or not.
 \end{definition}
 
 \begin{lemma}[Separation]
 \label{lem:sep}
-For $i\in S_1$, $\Nb{i}\subseteq A_1$; for $j\in S_0$, $\Nb{j}\subseteq A_0$; hence
-$\Nb{i}\cap\Nb{j}=\emptyset$.
+For $i\in S_1$, $\Nb{i}\subseteq A_1$; for $j\in S_0$, $\Nb{j}\subseteq A_0$;
+hence $\Nb{i}\cap\Nb{j}=\emptyset$.
 \end{lemma}
 
 \begin{proof}
-Interiority puts every point within $r$ of $x_i$ inside the closure of $x_i$'s
-tile. The test uses non-strict inequalities, so containment can fail only for
-a neighbour lying exactly on the upper tile boundary at distance exactly $r$, a
-null event for measured coordinates. Tiles of different parity are disjoint.
+Interiority puts every point within distance $r$ of $x_i$ inside the closed
+square of $x_i$'s split tile. The inequalities are not strict, so containment
+can fail only for a neighbour lying exactly on the upper edge of the tile at
+distance exactly $r$, a probability-zero event for measured coordinates.
+Tiles of different parity do not overlap.
 \end{proof}
 
 \begin{definition}[Candidate family]
 \label{def:family}
-With support floor $s$ and optional composition filter $(m,c)$,
+Fix a support floor $\kappa$ (\texttt{--min-support}) and an optional
+composition filter: at least $\mtypes$ cell types (\texttt{--min-types}), each
+with at least $\mcells$ cells (\texttt{--min-type-cells}). Take the classes of
+$S_0$ under $\lab^{\obs}$ (Definition~\ref{def:classes}), with
+representatives $\hat h_1,\dots,\hat h_Q$. The candidate family is
 \begin{align*}
-  \mathcal F=\bigl\{\hat h_q:\ &q\text{ a class on }S_0,\
-  N(\hat h_q;\lab^{\obs},S_0)\ge s,\ D(\hat h_q;\lab^{\obs},S_0)\ge s,\\
-  &|\{t:\hat h_q[t]\ge c\}|\ge m\bigr\}=\{v_1,\dots,v_C\},
+  \mathcal F=\bigl\{\hat h_q:\ &N(\hat h_q;\lab^{\obs},S_0)\ge \kappa,\
+  D(\hat h_q;\lab^{\obs},S_0)\ge \kappa,\
+  |\{t\in\types:\hat h_q[t]\ge \mcells\}|\ge \mtypes\bigr\}.
 \end{align*}
-with $\hat h_q$ the first count vector of class $q$; the filter is off when $m=0$.
+With $\mtypes=0$ the last condition always holds. $C=|\mathcal F|$ is the
+family size, and $v_1,\dots,v_C$ are its members in increasing order of $q$;
+candidate $c\in\{1,\dots,C\}$ is the query vector $v_c$.
 \end{definition}
 
 \begin{lemma}[Measurability]
 \label{lem:meas}
-$\mathcal F$ is a function of $\lab|_{A_0}$ alone.
+$\mathcal F$ is a function of $\lab^{\obs}|_{A_0}$ alone.
 \end{lemma}
 
 \begin{proof}
-$\mathcal F$ uses only $h_i(\lab)$ and match sets for $i\in S_0$, whose
-neighbourhoods lie in $A_0$ by Lemma~\ref{lem:sep}.
+$\mathcal F$ uses only the compositions $h_i(\lab^{\obs})$ and match sets of
+centres $i\in S_0$, whose neighbourhoods lie in $A_0$ by
+Lemma~\ref{lem:sep}.
 \end{proof}
 
 \begin{definition}[Conditional null]
-$H_0^{\mathrm{blk},1}$: conditional on positions, per-tile label multisets and
-$\lab|_{A_0}$, the labelling is uniform over $\prod_g\mathfrak S(B_g\cap A_1)$ ---
-labels move only within the testing part of each tile.
+\label{def:condnull}
+$H_0^{\mathrm{blk},1}$ states that, conditional on the positions, on
+$\lab^{\obs}|_{A_0}$ and on the label multiset of every $W_g\cap A_1$,
+$\lab^{\obs}$ is uniformly distributed over
+$\{\psi\lab^{\obs}:\psi\in\prod_{g=1}^G\Sym(W_g\cap A_1)\}$: labels move only
+within the testing part of each tile. The draws $\lab^{(b)}$ are generated as
+in Remark~\ref{rem:draws} with this set of permutations.
 \end{definition}
 
 \begin{example}{what happened before the split existed}
@@ -347,36 +495,55 @@ repeat without the winner, to judge the second best against the luckiest of
 the rest, and so on.
 \end{plain}
 
-For the family $v_1,\dots,v_C$, compute $p_c$ and $p^{(b)}_c$ as in
-Definition~\ref{def:p}, on the testing centres $S_1$.
+For each candidate $c$, apply Definitions~\ref{def:p} and~\ref{def:effect}
+with $v=v_c$ and $S=S_1$. This gives the counts $N^{\obs}_c$ and $N^{(b)}_c$,
+the $p$-values $p_c$ and $p^{(b)}_c$, the null mean $\bar N_c$, the lift
+$\lift_c$ and the $z$-score $z_c$.
+
+\begin{definition}[Candidate hypotheses]
+\label{def:hyp}
+The hypothesis $H_c$ states that $N^{\obs}_c,N^{(1)}_c,\dots,N^{(B)}_c$ are
+exchangeable. Candidate $c$ is a \emph{true null} when $H_c$ holds; $I_0$ is
+the set of true nulls. $H_0^{\mathrm{blk},1}$ implies every $H_c$ at once (the
+\emph{complete null}). \emph{Subset pivotality} is the assumption that the
+joint distribution of $(p_c)_{c\in I_0}$ is the same as under the complete
+null, whichever other hypotheses are false.
+\end{definition}
 
 \begin{definition}[Westfall--Young step-down on the minimum $p$-value]
-Order the candidates so that $p_{(1)}\le\dots\le p_{(C)}$ (ties by decreasing
-lift, then first appearance). For $k=1,\dots,C$,
+\label{def:wy}
+Rank the candidates by increasing $p_c$, breaking ties by decreasing
+$\lift_c$ and then by increasing $c$. Write $(1),\dots,(C)$ for the candidates
+in this order, so that $p_{(1)}\le\dots\le p_{(C)}$. For $k=1,\dots,C$ and
+$b=1,\dots,B$,
 \[
-  M^{(b)}_k=\min_{j\ge k}p^{(b)}_{(j)},\qquad
-  \tilde p_{(k)}=\frac{1+|\{b:M^{(b)}_k\le p_{(k)}\}|}{B+1},\qquad
+  \minp^{(b)}_k=\min_{j\ge k}p^{(b)}_{(j)},\qquad
+  \tilde p_{(k)}=\frac{1+|\{b:\minp^{(b)}_k\le p_{(k)}\}|}{B+1},\qquad
   \bar p_{(k)}=\max_{j\le k}\tilde p_{(j)}.
 \]
-Candidate $c$ is significant when $\bar p_c\le\alpha$.
+$\minp^{(b)}_k$ is the smallest draw-$b$ $p$-value among the candidates ranked
+$k$ or later, and $\bar p_c$ is the adjusted $p$-value of candidate $c$ at its
+rank. For the family-wise level $\alpha\in(0,1)$ (\texttt{--alpha}),
+candidate $c$ is \emph{significant} when $\bar p_c\le\alpha$.
 \end{definition}
 
 \begin{proposition}[Family-wise error]
 \label{prop:fwer}
-Under $H_0^{\mathrm{blk},1}$ and subset pivotality --- the joint law of the true
-nulls' $p$-values does not depend on which other hypotheses are true ---
-$\Pr(\exists\ \text{true null } c:\bar p_c\le\alpha)\le\alpha$.
+Under $H_0^{\mathrm{blk},1}$ and subset pivotality,
+$\Pr(\exists\, c\in I_0:\bar p_c\le\alpha)\le\alpha$.
 \end{proposition}
 
-This is the Westfall--Young result: the permutations supply the joint law of
-the $p$-values, dependence included, so no independence is assumed.
+This is the Westfall--Young result: the permutations supply the joint
+distribution of the $p$-values, dependence included, so no independence
+between candidates is assumed.
 
 \begin{remark}[Why observation and draws share one pooled set]
 Scoring each draw only against the other draws gives it denominator $B$ and a
-floor of $1/B$, while the observation reaches $1/(B+1)$. An observation at its
-floor could then never be matched, and the adjustment rejected $10$--$16\%$ of
-the time at $\alpha=0.05$ on exchangeable counts. Scoring everything inside
-the same $B+1$ values restores the nominal level.
+smallest possible value of $1/B$, while the observation reaches $1/(B+1)$. An
+observation at its smallest value could then never be matched, and the
+adjustment rejected $10$--$16\%$ of the time at $\alpha=0.05$ on exchangeable
+counts. Scoring everything among the same $B+1$ values, as in
+Definition~\ref{def:p}, restores the nominal level.
 \end{remark}
 
 \begin{example}{how many lottery tickets win by luck?}
@@ -393,26 +560,29 @@ this size \emph{always} finds something.
 \toprule
 & real & \multicolumn{9}{c}{pretend maps $b=1,\dots,9$} & raw $p$ \\
 \midrule
-count of A & 12 & 4 & 6 & 3 & 5 & 7 & 2 & 4 & 6 & 5 & 0.1 \\
-count of B &  9 & 5 & 9 & 4 & 10 & 6 & 5 & 3 & 7 & 4 & 0.3 \\
-count of C &  3 & 2 & 4 & 3 & 5 & 1 & 3 & 2 & 4 & 3 & 0.7 \\
+count of recipe 1 & 12 & 4 & 6 & 3 & 5 & 7 & 2 & 4 & 6 & 5 & 0.1 \\
+count of recipe 2 &  9 & 5 & 9 & 4 & 10 & 6 & 5 & 3 & 7 & 4 & 0.3 \\
+count of recipe 3 &  3 & 2 & 4 & 3 & 5 & 1 & 3 & 2 & 4 & 3 & 0.7 \\
 \midrule
-\multicolumn{12}{l}{each pretend map's own pooled rank (numerator of its $p^{(b)}$ over 10)} \\
-A & & 8 & 4 & 9 & 6 & 2 & 10 & 8 & 4 & 6 & \\
-B & & 7 & 3 & 9 & \textbf{1} & 5 & 7 & 10 & 4 & 9 & \\
-C & & 9 & 3 & 7 & \textbf{1} & 10 & 7 & 9 & 3 & 7 & \\
+\multicolumn{12}{l}{$R\bigl(N^{(b)}_c\bigr)$: each pretend map's own pooled rank, the numerator of $p^{(b)}_c$ over 10} \\
+recipe 1 & & 8 & 4 & 9 & 6 & 2 & 10 & 8 & 4 & 6 & \\
+recipe 2 & & 7 & 3 & 9 & \textbf{1} & 5 & 7 & 10 & 4 & 9 & \\
+recipe 3 & & 9 & 3 & 7 & \textbf{1} & 10 & 7 & 9 & 3 & 7 & \\
 \midrule
-luckiest of A, B, C & & 7 & 3 & 7 & \textbf{1} & 2 & 7 & 8 & 3 & 6 & \\
+luckiest of the three & & 7 & 3 & 7 & \textbf{1} & 2 & 7 & 8 & 3 & 6 & \\
 \bottomrule
 \end{tabular}
 \end{center}
 \normalsize
-A is the most extreme on the real map (rank 1, raw $p=0.1$). On map $b=4$ the
-luckiest recipe --- B, and C too --- also reached rank 1. So A beats
-everything luck produced except once: $\tilde p_A=(1+1)/10=0.2$. B is then
-judged only against the luckiest of B and C: three maps reach rank $\le3$, so
-$\tilde p_B=0.4$. C against itself gives $0.7$. Raw $0.1,0.3,0.7$ become adjusted
-$0.2,0.4,0.7$: A pays for the fact that we also looked at B and C.
+Here $B=9$ and $C=3$, and the raw $p$-values already put the recipes in the
+order $(1),(2),(3)$. Recipe 1 is the most extreme on the real map (rank 1,
+$p_{(1)}=0.1$). On map $b=4$ the luckiest recipe --- recipe 2, and recipe 3
+too --- also reached rank 1, so $\minp^{(4)}_1=0.1\le p_{(1)}$. That happens on
+one map only, so $\tilde p_{(1)}=(1+1)/10=0.2$. Recipe 2 is then judged only
+against the luckiest of recipes 2 and 3: three maps reach rank $\le3$, so
+$\tilde p_{(2)}=0.4$. Recipe 3 against itself gives $0.7$. Raw
+$0.1,0.3,0.7$ become adjusted $0.2,0.4,0.7$: recipe 1 pays for the fact that we
+also looked at recipes 2 and 3.
 \end{example}
 
 % =====================================================================
@@ -428,21 +598,22 @@ recipe rarely hits the top. As a rule of thumb, about twenty pretend maps for
 every recipe on the list.
 \end{plain}
 
-Every $p$-value is a multiple of $1/(B+1)$. If the $C$ candidates behaved
-independently, a fraction $\approx C/(B+1)$ of the draws would have some
-candidate at its floor, so
+Every $p$-value is a multiple of $1/(B+1)$, and the smallest possible value,
+the \emph{floor}, is $1/(B+1)$. If the $C$ candidates behaved independently, a
+fraction $\approx C/(B+1)$ of the draws would have some candidate at its
+floor, so
 \[
-  \min_c\bar p_c\ \gtrsim\ \frac{C}{B+1},
+  \min_{c}\bar p_c\ \gtrsim\ \frac{C}{B+1},
   \qquad\text{hence rejecting at level }\alpha\text{ needs }\ B\gtrsim\frac{C}{\alpha}.
 \]
 Correlated candidates, which near-duplicate recipes are, do better. The
 implementation warns when $B+1<20\,C$.
 
 \begin{example}{823 candidates on LSP31891}
-With $B=199$ the bound is $823/200\approx4$: no recipe could ever be declared
-significant. With $B=19{,}999$ it is $0.041$, and the run reported
-significant motifs at $\bar p=0.0136$, below the bound because the candidates
-are correlated.
+With $C=823$ and $B=199$ the bound is $823/200\approx4$: no recipe could ever
+be declared significant. With $B=19{,}999$ it is $0.041$, and the run
+reported significant motifs at $\bar p_c=0.0136$, below the bound because the
+candidates are correlated.
 \end{example}
 
 % =====================================================================
@@ -452,7 +623,7 @@ are correlated.
 \begin{plain}
 Now we have several maps, one per patient. Each map keeps its own squares, and
 stickers are \emph{never} swapped between maps --- a pretend version of patient
-1 only ever uses patient 1's stickers. We pick candidate recipes from the black
+1 only ever uses patient 1's stickers. We pick candidate recipes from the grey
 squares of all maps together, count each recipe on the white squares of every
 map, and add the counts up. Then the same luck machine and the same
 luckiest-of-all rule decide which recipes are real. Because every pretend round
@@ -463,83 +634,95 @@ about that patient, not yet about the disease.
 \end{plain}
 
 \begin{definition}[Samples]
-Samples $s=1,\dots,S$ partition the cells, $\cells=\bigsqcup_s\cells_s$, each
-with its own coordinate system. Cell types are aligned across samples by name,
-$\types$ being the union. Neighbourhoods are taken within a sample:
+\label{def:samples}
+With $M$ input files, the samples $s=1,\dots,M$ partition the cells,
+$\cells=\bigsqcup_{s=1}^M\cells_s$, each sample with its own coordinate
+system. Cell types are matched across samples by name, $\types$ numbering the
+union of the names. Neighbourhoods stay within a sample:
 \[
   \Nb{i}=\{j\in\cells_s:\lVert x_j-x_i\rVert_2\le r\}\qquad\text{for }i\in\cells_s.
 \]
-Tiles, the checkerboard and interiority are defined per sample in that
-sample's coordinates.
+Tiles, the checkerboard and interiority are built per sample in that
+sample's coordinates. For sample $s$, $W_{s,1},\dots,W_{s,G_s}$ are its $G_s$
+non-empty tiles; $S_{0,s}$ and $S_{1,s}$ are its selection and testing
+centres; $A_{0,s}$ and $A_{1,s}$ are its selection and testing halves. The
+sets $S_0$, $S_1$, $A_0$ and $A_1$ are the unions of these over samples.
 \end{definition}
 
 \begin{definition}[Product null]
-Let $B_{s,g}$ be the cells of sample $s$ in block tile $g$ and $A_{1,s}$ those in
-its testing tiles. The multi-sample null is uniform over
+\label{def:product}
+The multi-sample null states that, conditional on the positions, on
+$\lab^{\obs}|_{A_0}$ and on the label multiset of every $W_{s,g}\cap A_{1,s}$,
+$\lab^{\obs}$ is uniformly distributed over its images under
 \[
-  \prod_{s=1}^{S}\ \prod_{g}\ \mathfrak S\bigl(B_{s,g}\cap A_{1,s}\bigr),
+  \prod_{s=1}^{M}\ \prod_{g=1}^{G_s}\ \Sym\bigl(W_{s,g}\cap A_{1,s}\bigr).
 \]
-conditional on positions, per-tile label multisets and the selection halves of
-every sample. Labels never move between samples. Under the global null the
-product runs over whole samples instead of tiles.
+Labels never move between samples. Under the global null each sample is a
+single tile.
 \end{definition}
 
 \begin{definition}[Pooled and per-sample statistics]
-The family $\mathcal F$ is built by Definition~\ref{def:family} on the union of
-the selection centres of all samples. For candidate $c$ and sample $s$, let
-$S_{1,s}=S_1\cap\cells_s$ and
+\label{def:pooled}
+The family $\mathcal F=\{v_1,\dots,v_C\}$ is built by
+Definition~\ref{def:family} on the selection centres $S_0$ of all samples.
+For candidate $c$, sample $s$ and $b=0,\dots,B$ (with $\lab^{(0)}=\lab^{\obs}$),
 \[
-  N_{c,s}=N(v_c;\lab,S_{1,s}),\qquad N_c=\sum_{s=1}^{S}N_{c,s}.
+  N^{(b)}_{c,s}=N\bigl(v_c;\lab^{(b)},S_{1,s}\bigr),\qquad
+  N^{(b)}_c=\sum_{s=1}^{M}N^{(b)}_{c,s},
 \]
-The family-wise test of Section~\ref{sec:wy} is applied to the pooled counts
-$N_c$. Each draw permutes all samples simultaneously, so the same draws also
-give per-sample $p$-values
+with $N^{\obs}_{c,s}=N^{(0)}_{c,s}$ and $N^{\obs}_c=N^{(0)}_c$. The pooled
+count $N^{(b)}_c$ equals $N(v_c;\lab^{(b)},S_1)$, and the family-wise test of
+Section~\ref{sec:wy} is applied to it. Each draw permutes all samples
+simultaneously, so the same draws also give per-sample evidence: the null
+mean $\bar N_{c,s}$ and lift $\lift_{c,s}$ of Definition~\ref{def:effect}
+computed from $N^{(b)}_{c,s}$, the per-sample $p$-value
 \[
-  p_{c,s}=\frac{1+|\{b:N^{(b)}_{c,s}\ge N^{\obs}_{c,s}\}|}{B+1}
+  p_{c,s}=\frac{1+|\{b\in\{1,\dots,B\}:N^{(b)}_{c,s}\ge N^{\obs}_{c,s}\}|}{B+1},
 \]
-and the replication count $\operatorname{rep}_c=|\{s:p_{c,s}\le\alpha\}|$.
+and the replication count $\rep_c=|\{s:p_{c,s}\le\alpha\}|$.
 \end{definition}
 
 \begin{proposition}[Pooled validity]
 \label{prop:multi}
 Under the product null, Propositions~\ref{prop:valid} and~\ref{prop:fwer} hold
-for the pooled statistics $N_c$.
+for the pooled counts $N_c^{(b)}$.
 \end{proposition}
 
 \begin{proof}
 Neighbourhoods and shuffles stay inside samples, so Lemmas~\ref{lem:sep}
-and~\ref{lem:meas} hold sample by sample, and $\mathcal F$ is a function of the
-selection halves of all samples. Given those, $N_c$ is a fixed function of the
-testing labels, and the product null makes the observed and permuted labellings
-exchangeable; the pooled values are therefore exchangeable and the proofs
-carry over unchanged.
+and~\ref{lem:meas} hold sample by sample, and $\mathcal F$ is a function of
+$\lab^{\obs}|_{A_0}$. Given that, $N^{(b)}_c$ is a fixed function of the
+testing labels of draw $b$, and the product null makes the observed and
+permuted labellings i.i.d.\ as in Remark~\ref{rem:draws}; the pooled counts
+are therefore exchangeable and the proofs carry over unchanged.
 \end{proof}
 
 \begin{remark}[What the per-sample numbers are, and are not]
 The per-sample $p$-values $p_{c,s}$ are not adjusted for the family and carry
-no error guarantee; $\operatorname{rep}_c$ is descriptive. They answer a
-different question: \emph{where} does the pooled evidence come from? A large
-sample can carry $N_c$ on its own, so a pooled discovery with
-$\operatorname{rep}_c=1$ should be read as a strong result in one tissue.
+no error guarantee; $\rep_c$ is descriptive. They answer a different
+question: \emph{where} does the pooled evidence come from? A large sample can
+carry $N^{\obs}_c$ on its own, so a pooled discovery with $\rep_c=1$ should be
+read as a strong result in one tissue.
 \end{remark}
 
 \begin{example}{two patients}
-Recipe A appears 30 times on patient 1's white squares against a null mean of
-10, and 2 times on patient 2's against 2. Pooled, $N_A=32$ against 12: clearly
-more than luck, and it may well be significant after adjustment. But
-$p_{A,1}$ is tiny while $p_{A,2}$ is large, so $\operatorname{rep}_A=1$: the
-signal is patient 1's. A recipe with 12 against 6 in both would pool to 24
-against 12 --- a similar lift --- with $\operatorname{rep}=2$, a stronger claim
-about the disease.
+A recipe $v$ appears 30 times on patient 1's white squares against a null mean
+of 10, and 2 times on patient 2's against a null mean of 2. Pooled, it appears
+32 times against 12: clearly more than luck, and it may well be significant
+after adjustment. But its per-sample $p$-value is tiny for patient 1 and large
+for patient 2, so its replication count is 1: the signal is patient 1's. A
+recipe with 12 against 6 in both would pool to 24 against 12 --- a similar
+lift --- with replication count 2, a stronger claim about the disease.
 \end{example}
 
 \begin{example}{checking that samples never mix}
-Two samples share every coordinate; one is entirely type X, the other entirely
-type Y. If circles crossed samples, X+Y mixtures would appear; if shuffles
-crossed samples, the pretend maps would dilute the pure recipes and give small
-$p$-values. The implementation finds only pure X and pure Y, each with $p=1$
-under both nulls: no pretend map can differ from the real one. This is a test in
-the suite (\texttt{multi\_sample\_separation}).
+Two samples share every coordinate; one is entirely of one cell type, the
+other entirely of a second type. If circles crossed samples, mixtures of the
+two types would appear; if shuffles crossed samples, the pretend maps would
+dilute the pure recipes and give small $p$-values. The implementation finds
+only the two pure recipes, each with $p=1$ under both nulls: no pretend map
+can differ from the real one. This is a test in the suite
+(\texttt{multi\_sample\_separation}).
 \end{example}
 
 % =====================================================================
@@ -553,19 +736,21 @@ in enough separate places on the checking squares. Throwing away winners can
 never create a false one, so this does not weaken the guarantee.
 \end{plain}
 
-Candidates are traversed in ranking order and reported unless they lie within
-$2\rho$ of one already reported or have $D(v_c;\lab^{\obs},S_1)<s$; at most
-$K_{\max}$ are reported.
+Candidates are taken in the ranking order of Definition~\ref{def:wy}.
+Candidate $c$ is skipped when $d(v_c,v_{c'})\le2\rho$ for a candidate $c'$
+already reported, or when $D(v_c;\lab^{\obs},S_1)<\kappa$; reporting stops
+after \texttt{--max-motifs} candidates.
 
 \begin{proposition}[Post-hoc filtering is safe]
-If $\mathcal R=\{c:\bar p_c\le\alpha\}$ and $\mathcal R'\subseteq\mathcal R$ by any
-rule, then $\Pr(\mathcal R'\text{ contains a true null})\le
-\Pr(\mathcal R\text{ contains a true null})\le\alpha$.
+Let $\mathcal R=\{c:\bar p_c\le\alpha\}$ be the significant candidates and
+$\mathcal R'\subseteq\mathcal R$ those kept by any rule. Then
+$\Pr(\mathcal R'\cap I_0\ne\emptyset)\le\Pr(\mathcal R\cap I_0\ne\emptyset)\le\alpha$.
 \end{proposition}
 
-Reported effect sizes are the lift $N^{\obs}_c/\bar N_c$, with $\bar N_c$ the mean
-over draws, the $z$-score, and the disjoint support; with several samples, the
-same per sample and $\operatorname{rep}_c$.
+Each reported candidate carries $N^{\obs}_c$, $\bar N_c$, $\lift_c$, $z_c$,
+$p_c$, $\bar p_c$ and $D(v_c;\lab^{\obs},S_1)$; with several samples, also
+$N^{\obs}_{c,s}$, $\bar N_{c,s}$, $\lift_{c,s}$ and $p_{c,s}$ for every sample
+and $\rep_c$.
 
 % =====================================================================
 \section{Evidence that the guarantees hold}
@@ -577,36 +762,39 @@ where nothing is going on and count how often it raises an alarm. And feed it
 maps with something planted to see whether it finds it.
 \end{plain}
 
-All checks below use \texttt{--radius 100 --rho 0.05}, block tiles of 750,
-split tiles of 1000 and $\alpha=0.05$; synthetic tissues are $3000\times3000$
-with 4{,}500 cells and six types. ``Nothing to find'' means uniform positions
-with independently drawn labels, where the null is exactly true; ``niches
-planted'' adds 40 discs filled with two rare types. They are reproduced by \texttt{dev/fwer.py},
+All checks below use \texttt{--radius 100 --rho 0.05}, block tiles of side
+$L=750$, split tiles of side $\Lambda=1000$ and $\alpha=0.05$; synthetic tissues
+are $3000\times3000$ with 4{,}500 cells and six types. ``Nothing to find''
+means uniform positions with independently drawn labels, where the null is
+exactly true; ``niches planted'' adds 40 discs filled with two rare types.
+The columns give the family size $C$, the number of draws $B$, and the number
+of datasets in which some candidate had adjusted $\bar p_c\le\alpha$ or raw
+$p_c\le\alpha$. They are reproduced by \texttt{dev/fwer.py},
 \texttt{dev/power.py} and \texttt{dev/multisample.py}.
 
 \begin{center}
 \small
 \begin{tabular}{lrrrr}
 \toprule
-Scenario & Family & $B$ & Rejected (adjusted) & Rejected (raw) \\
+Scenario & $C$ & $B$ & Rejected (adjusted) & Rejected (raw) \\
 \midrule
 One tissue, nothing to find & 111 & 2{,}999 & 3/60 \ (5.0\%) & 36/60 \\
 Three tissues, nothing to find & 10 & 2{,}999 & 1/60 \ (1.7\%) & 5/60 \\
 Three tissues, nothing to find & 177 & 5{,}999 & 2/60 \ (3.3\%) & 54/60 \\
 \midrule
 One tissue, niches planted & --- & 199 & 12/12 detected & \\
-Three tissues, niches in 3/3 & --- & 2{,}999 & detected, $\operatorname{rep}=3$ & \\
-Three tissues, niches in 1/3 & --- & 2{,}999 & detected, $\operatorname{rep}=1$ & \\
+Three tissues, niches in 3/3 & --- & 2{,}999 & detected, $\rep_c=3$ & \\
+Three tissues, niches in 1/3 & --- & 2{,}999 & detected, $\rep_c=1$ & \\
 Three tissues, no niches & --- & 2{,}999 & nothing reported & \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 Without adjustment, the searches with families of 111 and 177 candidates would
-have raised an alarm in $60\%$ and $90\%$ of structureless datasets. A calibration run is only informative when
-$B$ is large enough for rejection to be possible at all: with too few draws
-nothing is ever rejected, which looks like perfect calibration while measuring
-nothing.
+have raised an alarm in $60\%$ and $90\%$ of structureless datasets. A
+calibration run is only informative when $B$ is large enough for rejection to
+be possible at all: with too few draws nothing is ever rejected, which looks
+like perfect calibration while measuring nothing.
 
 % =====================================================================
 \section{Four PDAC tissues in one run}
@@ -635,19 +823,21 @@ pam_st --input LSP31891.csv --input LSP31894.csv --input LSP31895.csv \
 \end{verbatim}
 \end{minipage}
 \end{center}
-The split kept 28{,}429 selection and 27{,}554 testing centres
-(4{,}864 / 6{,}721 / 8{,}011 / 7{,}958 per sample) and dropped 18{,}337 at tile
-edges. Of 18{,}531 selection compositions, $C=668$ passed the filters. The
-budget bound is $C/(B+1)=0.045$; correlation between candidates brought the
-smallest adjusted $p$ to $0.013$. The run took 155\,s, about 10\,ms per
-permutation.
+so $M=4$, $r=100$, $\rho=0.05$, $\kappa=10$, $\mtypes=\mcells=2$,
+$\Lambda=1500$, $L=500$ and $B=14{,}999$. The split kept $|S_0|=28{,}429$
+selection and $|S_1|=27{,}554$ testing centres
+($|S_{1,s}|=4{,}864$ / $6{,}721$ / $8{,}011$ / $7{,}958$ per sample) and
+dropped 18{,}337 centres at tile edges. Of $Q=18{,}531$ selection classes,
+$C=668$ passed the filters. The budget bound is $C/(B+1)=0.045$; correlation
+between candidates brought the smallest $\bar p_c$ to $0.013$. The run took
+155\,s, about 10\,ms per permutation.
 
 \begin{center}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{rlrrrrcl}
 \toprule
-& Motif (cells in the circle) & $N^{\obs}$ & $\bar N$ & Lift & $\bar p$ & rep & $p_{c,s}\le0.05$ in \\
+Rank & Motif $v_c$ (cells in the circle) & $N^{\obs}_c$ & $\bar N_c$ & $\lift_c$ & $\bar p_c$ & $\rep_c$ & $p_{c,s}\le0.05$ in \\
 \midrule
 1 & 32 endothelial, 3 fibroblast & 38 & 0.6 & 63.4 & 0.013 & 2 & 94, 96 \\
 2 & 23 cancer, 2 prolif.\ cancer, 1 epithelial & 46 & 1.0 & 45.8 & 0.013 & 3 & 91, 94, 96 \\
@@ -665,18 +855,22 @@ permutation.
 \bottomrule
 \end{tabular}
 \end{center}
-{\footnotesize ``Cancer'' is \texttt{Other\_cancer}, ``fibroblast''
-\texttt{Other\_fibroblasts}; samples are abbreviated by their last two
-digits. Counts are compositions of a class representative, so only their
-proportions matter.}
+{\footnotesize Rank is the reporting order of Section~\ref{sec:report}; the
+symbols in each row refer to the candidate $c$ reported at that rank, and
+``motif $k$'' below means the one at rank $k$. ``Cancer'' is
+\texttt{Other\_cancer}, ``fibroblast'' \texttt{Other\_fibroblasts}; samples
+are abbreviated by their last two digits. Counts are the entries of the class
+representative $v_c$, so only their proportions matter.}
 
 \begin{example}{reading the per-sample columns}
+For every sample $s$ the table gives the observed count over the null mean,
+$N^{\obs}_{c,s}/\bar N_{c,s}$, and the per-sample $p$-value $p_{c,s}$.
 \begin{center}
 \small
 \begin{tabular}{lrrrrrrrr}
 \toprule
 & \multicolumn{2}{c}{LSP31891} & \multicolumn{2}{c}{LSP31894} & \multicolumn{2}{c}{LSP31895} & \multicolumn{2}{c}{LSP31896} \\
-& $N/\bar N$ & $p$ & $N/\bar N$ & $p$ & $N/\bar N$ & $p$ & $N/\bar N$ & $p$ \\
+& count & $p_{c,s}$ & count & $p_{c,s}$ & count & $p_{c,s}$ & count & $p_{c,s}$ \\
 \midrule
 Motif 2 (cancer) & 3/0.2 & 0.017 & 35/0.3 & $7\cdot10^{-5}$ & 0/0.0 & 1 & 8/0.4 & 0.002 \\
 Motif 10 (fibro.+immune) & 21/15.7 & 0.16 & 27/3.9 & $7\cdot10^{-5}$ & 6/2.5 & 0.07 & 5/3.3 & 0.25 \\
@@ -688,7 +882,7 @@ motifs are significant pooled, but they say different things. Motif~2 stands
 out in every sample where it \emph{can} occur: LSP31895 has a null mean of
 exactly $0$, meaning no within-tile shuffle of its testing cells can build
 this recipe (it has 682 \texttt{Other\_cancer} cells, against 1{,}450--2{,}868
-elsewhere). Its $p=1$ there is silence, not contradiction. Motif~10 is
+elsewhere). Its $p_{c,s}=1$ there is silence, not contradiction. Motif~10 is
 LSP31894's: the other three tissues show it about as often as chance.
 \end{example}
 
@@ -713,49 +907,54 @@ What the run shows:
 \label{sec:algo}
 
 \begin{enumerate}[itemsep=2pt]
-  \item Read every sample, drop \texttt{unclassified}, align cell types by name.
+  \item Read every sample, drop \texttt{unclassified}, match cell types by name.
   \item Build $\Nb{i}$ within each sample with a hash grid of cell size $r$.
   \item Split each sample into selection, testing and boundary centres.
   \item On all selection centres: classes, frequencies, disjoint support, the
         family $\mathcal F$.
   \item On each sample's testing centres: $N^{\obs}_{c,s}$, summed to $N^{\obs}_c$.
   \item For $b=1,\dots,B$: one within-tile shuffle of every sample's testing
-        labels; per sample, histograms, classes, one tree and $C$ ball
-        queries; add to the pooled $C\times B$ matrix and the per-sample running
-        totals.
+        labels; per sample, compositions, classes, one tree and $C$ queries;
+        store $N^{(b)}_c$ in a $C\times B$ table and add $N^{(b)}_{c,s}$ to the
+        per-sample running totals.
   \item Pooled-rank $p$-values, step-down adjustment, reporting.
 \end{enumerate}
 
-One permutation costs $O\bigl(\sum_s(|S_{1,s}|\bar\nu+m_s\log m_s+C\log m_s)\bigr)$,
-with $\bar\nu$ the mean neighbourhood size and $m_s$ the classes of sample $s$;
-the adjustment costs $O(CB\log B)$ time and $O(CB)$ memory. Pooling samples
-enlarges the family, and with it both the budget $B$ and the cost of each draw.
+Let $\bar\nu$ be the mean neighbourhood size $|\Nb{i}|$ over testing centres
+and $Q_s$ the number of classes among the testing centres of sample $s$ in
+one draw. One permutation costs
+$O\bigl(\sum_{s=1}^M(|S_{1,s}|\,\bar\nu+Q_s\ln Q_s+C\ln Q_s)\bigr)$; the
+adjustment costs $O(CB\ln B)$ time and memory for $O(CB)$ numbers. Pooling
+samples enlarges the family, and with it both the budget $B$ and the cost of
+each draw.
 
 \begin{center}
 \small
-\begin{tabular}{llp{7.2cm}}
+\begin{tabular}{llp{6.4cm}}
 \toprule
 Symbol & Flag & Meaning \\
 \midrule
---- & \texttt{--input} & One cell table; repeat it to analyse several samples together \\
-$r$ & \texttt{--radius} & Neighbourhood radius, input units \\
+$M$ & \texttt{--input} & One cell table per sample; repeat the flag to analyse several samples together \\
+$r$ & \texttt{--radius} & Neighbourhood radius, in input units \\
 $\rho$ & \texttt{--rho} & Match tolerance \\
-$d$ & \texttt{--metric} & $\ell_2$ chord or $\sqrt{\mathrm{JS}}$ \\
-$L$, $o$ & \texttt{--block-size}, \texttt{--block-origin-x/y} & Block-null tiles \\
-$L_s$ & \texttt{--split-size} & Checkerboard tile side, $L_s>2r$ \\
-$s$ & \texttt{--min-support} & Support and disjoint-support floor \\
-$(m,c)$ & \texttt{--min-types}, \texttt{--min-type-cells} & Composition filter, off when $m=0$ \\
+$d$ & \texttt{--metric} & Chord distance (\texttt{l2}) or $\sqrt{\JS}$ (\texttt{js}) \\
+$L$, $o$ & \texttt{--block-size}, \texttt{--block-origin-x/y} & Block-null tile side and grid origin \\
+$\Lambda$ & \texttt{--split-size} & Checkerboard tile side, $\Lambda>2r$ \\
+$\kappa$ & \texttt{--min-support} & Floor on frequency and disjoint support \\
+$\mtypes$, $\mcells$ & \texttt{--min-types}, \texttt{--min-type-cells} & Composition filter, off when $\mtypes=0$ \\
 $B$ & \texttt{--permutations} & Pretend maps; aim for $B\ge20C$ \\
 $\alpha$ & \texttt{--alpha} & Family-wise level \\
-$K_{\max}$ & \texttt{--max-motifs} & Motifs reported \\
+--- & \texttt{--max-motifs} & Number of motifs reported \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 With several inputs the outputs change as follows:
 \begin{itemize}[itemsep=1pt]
-  \item \texttt{motif\_significance.csv} gains a \texttt{replicated\_in} column;
-  \item the new \texttt{motif\_samples.csv} gives each motif's evidence per sample;
+  \item \texttt{motif\_significance.csv} gains a \texttt{replicated\_in} column
+        ($\rep_c$);
+  \item the new \texttt{motif\_samples.csv} gives $N^{\obs}_{c,s}$,
+        $\bar N_{c,s}$, $\lift_{c,s}$ and $p_{c,s}$ for every sample;
   \item \texttt{matches.csv} names each match's sample and its row within that
         sample's file.
 \end{itemize}
@@ -770,17 +969,73 @@ With several inputs the outputs change as follows:
         with itself --- beats the block null. The composition filter, or a null
         preserving each type's own clustering, is needed to target
         co-localisation of different types.
-  \item \textbf{Tile sizes are part of the question.} $L$ and $L_s$ must be
+  \item \textbf{Tile sizes are part of the question.} $L$ and $\Lambda$ must be
         fixed before looking at the results.
   \item \textbf{Half of each tissue chooses, half checks.} A motif confined to
         one region may be chosen and then not confirmed.
   \item \textbf{Reported vectors are class representatives,} the first count
-        vector of each class; only their direction is meaningful.
+        vector of each class; only their proportions are meaningful.
   \item \textbf{Pooling is not replication.} The pooled test controls error for
-        the pooled statistic; replication across samples is reported but not
+        the pooled counts; replication across samples is reported but not
         adjusted, and a large tissue can carry a pooled result alone.
   \item \textbf{Discreteness} makes the $p$-values conservative rather than
         exactly uniform.
 \end{enumerate}
+
+% =====================================================================
+\appendix
+\section{Symbol index}
+\label{app:symbols}
+
+Every symbol that stands for a quantity of the pipeline, with the place that
+defines it. General notation ($|A|$, $\lVert\cdot\rVert_2$, $\Sym(A)$,
+$\lab|_A$, $\Pr$, \dots) is in Section~\ref{sec:notation}.
+
+\begin{small}
+\begin{longtable}{lp{8.2cm}l}
+\toprule
+Symbol & Meaning & Defined in \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+$\cells$, $n$, $i$, $j$ & Set of cells, number of cells, cell indices & Def.~\ref{def:tissue} \\
+$x_i$, $x_{i,e}$ & Position of cell $i$, its coordinate $e\in\{1,2\}$ & Def.~\ref{def:tissue}, \ref{def:split} \\
+$\types$, $K$, $t$ & Cell types, their number, type index & Def.~\ref{def:tissue} \\
+$\lab$, $\lab_i$, $\lab^{\obs}$ & Labelling, label of cell $i$, observed labelling & Def.~\ref{def:tissue} \\
+$r$, $\Nb{i}$ & Radius, neighbourhood of centre $i$ & Def.~\ref{def:nbhd} \\
+$h$, $h_i(\lab)$ & Count vector, composition of $\Nb{i}$ & Def.~\ref{def:nbhd} \\
+$u(h)$, $\phi(h)$, $\operatorname{Ent}$, $\JS$ & Unit vector, proportions, entropy, Jensen--Shannon divergence & Def.~\ref{def:match} \\
+$d$, $\rho$ & Distance between count vectors, match tolerance & Def.~\ref{def:match} \\
+$q$, $Q$, $\hat h_q$ & Class index, number of classes, class representative & Def.~\ref{def:classes} \\
+$v$, $S$ & Query vector, set of centres & Def.~\ref{def:freq} \\
+$N(v;\lab,S)$, $D(v;\lab,S)$ & Frequency, disjoint support & Def.~\ref{def:freq} \\
+$L$, $o$, $\gamma_L$ & Tile side, grid origin, tile index & Def.~\ref{def:block} \\
+$W_g$, $G$, $\tiles$, $\Pi_{\tiles}$ & Tile $g$, number of tiles, the tiles, within-tile permutations & Def.~\ref{def:block} \\
+$H_0^{\mathrm{blk}}$ & Block null hypothesis & Def.~\ref{def:block} \\
+$B$, $b$, $\lab^{(b)}$, $\psi_b$ & Number of draws, draw index, draw $b$, its permutation & Rem.~\ref{rem:draws} \\
+$N^{(b)}$, $N^{\obs}$, $R$ & Frequency in draw $b$, observed frequency, pooled rank & Def.~\ref{def:p} \\
+$p$, $p^{(b)}$ & $p$-value of the observation, score of draw $b$ & Def.~\ref{def:p} \\
+$\bar N$, $\hat s$, $\lift$, $z$ & Null mean, null standard deviation, lift, $z$-score & Def.~\ref{def:effect} \\
+$\alpha$ & Level; the family-wise level \texttt{--alpha} & Prop.~\ref{prop:valid}, Def.~\ref{def:wy} \\
+$\Lambda$, $a_{i,e}$, $\pi(i)$ & Split tile side, split tile index, parity & Def.~\ref{def:split} \\
+$S_0$, $S_1$, $A_0$, $A_1$ & Selection and testing centres, selection and testing halves & Def.~\ref{def:split} \\
+$\kappa$, $\mtypes$, $\mcells$ & Support floor, composition filter & Def.~\ref{def:family} \\
+$\mathcal F$, $C$, $c$, $v_c$ & Candidate family, its size, candidate index, candidate vector & Def.~\ref{def:family} \\
+$H_0^{\mathrm{blk},1}$ & Conditional null & Def.~\ref{def:condnull} \\
+$N^{\obs}_c$, $N^{(b)}_c$, $p_c$, $p^{(b)}_c$ & Counts and $p$-values of candidate $c$ on $S_1$ & Section~\ref{sec:wy} \\
+$\bar N_c$, $\lift_c$, $z_c$ & Effect sizes of candidate $c$ & Section~\ref{sec:wy} \\
+$H_c$, $I_0$ & Hypothesis of candidate $c$, set of true nulls & Def.~\ref{def:hyp} \\
+$(k)$, $\minp^{(b)}_k$, $\tilde p_{(k)}$ & Candidate at rank $k$, smallest remaining draw score, step-down value & Def.~\ref{def:wy} \\
+$\bar p_c$ & Adjusted $p$-value & Def.~\ref{def:wy} \\
+$M$, $s$, $\cells_s$ & Number of samples, sample index, cells of sample $s$ & Def.~\ref{def:samples} \\
+$W_{s,g}$, $G_s$ & Tiles of sample $s$, their number & Def.~\ref{def:samples} \\
+$S_{0,s}$, $S_{1,s}$, $A_{0,s}$, $A_{1,s}$ & Split sets of sample $s$ & Def.~\ref{def:samples} \\
+$N^{(b)}_{c,s}$, $N^{\obs}_{c,s}$ & Counts of candidate $c$ in sample $s$ & Def.~\ref{def:pooled} \\
+$\bar N_{c,s}$, $\lift_{c,s}$, $p_{c,s}$, $\rep_c$ & Per-sample null mean, lift, $p$-value; replication count & Def.~\ref{def:pooled} \\
+$\mathcal R$, $\mathcal R'$ & Significant and reported candidates & Section~\ref{sec:report} \\
+$\bar\nu$, $Q_s$ & Mean neighbourhood size, classes of sample $s$ in one draw & Section~\ref{sec:algo} \\
+\end{longtable}
+\end{small}
 
 \end{document}
