@@ -752,6 +752,20 @@ $p_c$, $\bar p_c$ and $D(v_c;\lab^{\obs},S_1)$; with several samples, also
 $N^{\obs}_{c,s}$, $\bar N_{c,s}$, $\lift_{c,s}$ and $p_{c,s}$ for every sample
 and $\rep_c$.
 
+The reported vector $v_c$ is a class representative, so it says nothing about
+how large the matching neighbourhoods are or what they hold on average. Each
+candidate therefore also carries the shape of its matches: with
+$\mathcal M_c=\{i\in S_1:d(h_i(\lab^{\obs}),v_c)\le\rho\}$,
+\[
+  \overline{\mathrm{cells}}_c=\frac1{|\mathcal M_c|}\sum_{i\in\mathcal M_c}\textstyle\sum_t h_i(\lab^{\obs})[t],
+  \qquad
+  \overline{\phi}_c=\frac1{|\mathcal M_c|}\sum_{i\in\mathcal M_c}\phi\bigl(h_i(\lab^{\obs})\bigr),
+\]
+the mean number of cells in a matching circle and their mean proportions, each
+circle weighted equally so that large neighbourhoods do not dominate. Both are
+reported per sample as well, and the spread of the per-sample $\overline\phi$
+values says whether every sample sees the same mixture.
+
 % =====================================================================
 \section{Evidence that the guarantees hold}
 \label{sec:evidence}
@@ -952,9 +966,11 @@ $\alpha$ & \texttt{--alpha} & Family-wise level \\
 With several inputs the outputs change as follows:
 \begin{itemize}[itemsep=1pt]
   \item \texttt{motif\_significance.csv} gains a \texttt{replicated\_in} column
-        ($\rep_c$);
+        ($\rep_c$) and \texttt{composition\_sd}, the spread of the per-sample
+        compositions;
   \item the new \texttt{motif\_samples.csv} gives $N^{\obs}_{c,s}$,
-        $\bar N_{c,s}$, $\lift_{c,s}$ and $p_{c,s}$ for every sample;
+        $\bar N_{c,s}$, $\lift_{c,s}$, $p_{c,s}$, $\overline{\mathrm{cells}}_{c,s}$
+        and $\overline\phi_{c,s}$ for every sample;
   \item \texttt{matches.csv} names each match's sample and its row within that
         sample's file.
 \end{itemize}

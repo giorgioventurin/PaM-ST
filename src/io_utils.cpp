@@ -46,6 +46,28 @@ void write_pattern_string(std::ostream& os,
     }
 }
 
+// Mean proportions as percentages, largest first, in the same "label:value"
+// shape as a pattern. Components below 0.05% are left out to keep it readable.
+void write_composition_string(std::ostream& os,
+                              const Dataset& data,
+                              const std::vector<double>& composition) {
+    std::vector<int> order;
+    for (int i = 0; i < static_cast<int>(composition.size()); ++i) {
+        if (composition[i] * 100.0 >= 0.05) order.push_back(i);
+    }
+    // Ties broken by label index, so the string is reproducible run to run.
+    std::sort(order.begin(), order.end(), [&](const int a, const int b) {
+        return composition[a] != composition[b] ? composition[a] > composition[b] : a < b;
+    });
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2);
+    for (int i = 0; i < static_cast<int>(order.size()); ++i) {
+        if (i > 0) out << ';';
+        out << data.label_names[order[i]] << ':' << composition[order[i]] * 100.0;
+    }
+    os << out.str();
+}
+
 std::string pattern_as_string(const Dataset& data, const std::vector<int>& pattern) {
     std::ostringstream out;
     write_pattern_string(out, data, pattern);
@@ -481,7 +503,9 @@ void write_outputs(const std::string& out_dir,
         std::ofstream f = open_output_file(out_dir, "motif_significance.csv");
         f << "rank,observed_frequency,disjoint_support,null_mean,null_sd,lift,z_score,"
              "p_raw,p_adjusted,significant,"
-          << (several_samples ? "replicated_in," : "") << "family_size,pattern\n";
+          << (several_samples ? "replicated_in," : "")
+          << "family_size,mean_cells,mean_composition,"
+          << (several_samples ? "composition_sd," : "") << "pattern\n";
         f << std::setprecision(12);
         for (const MotifTest& test : result.motif_tests) {
             f << test.rank << ',' << test.observed << ',' << test.disjoint_support
@@ -489,7 +513,13 @@ void write_outputs(const std::string& out_dir,
               << test.p_value << ',' << test.p_value_adjusted << ','
               << (test.significant ? "true" : "false") << ',';
             if (several_samples) f << test.replicated_in << ',';
-            f << result.candidate_family_size << ',';
+            f << result.candidate_family_size << ',' << test.mean_cells << ',';
+            write_composition_string(f, data, test.mean_composition);
+            f << ',';
+            if (several_samples) {
+                write_composition_string(f, data, test.composition_sd);
+                f << ',';
+            }
             write_pattern_string(f, data, test.pattern);
             f << '\n';
         }
@@ -501,7 +531,7 @@ void write_outputs(const std::string& out_dir,
         // motif_significance.csv, which pools all samples.
         std::ofstream f = open_output_file(out_dir, "motif_samples.csv");
         f << "rank,sample,observed_frequency,disjoint_support,null_mean,null_sd,lift,"
-             "p_raw,p_raw_below_alpha\n";
+             "p_raw,p_raw_below_alpha,mean_cells,mean_composition\n";
         f << std::setprecision(12);
         for (const MotifTest& test : result.motif_tests) {
             for (int sample = 0; sample < static_cast<int>(test.per_sample.size()); ++sample) {
@@ -509,7 +539,10 @@ void write_outputs(const std::string& out_dir,
                 f << test.rank << ',' << data.sample_names[sample] << ',' << e.observed << ','
                   << e.disjoint_support << ',' << e.null_mean << ',' << e.null_sd << ','
                   << e.lift << ',' << e.p_value << ','
-                  << (e.p_value <= config.alpha ? "true" : "false") << '\n';
+                  << (e.p_value <= config.alpha ? "true" : "false") << ','
+                  << e.mean_cells << ',';
+                write_composition_string(f, data, e.mean_composition);
+                f << '\n';
             }
         }
     }

@@ -574,6 +574,39 @@ void count_family(const std::vector<int>& histograms, const int n, const int n_l
 
 // One sample's testing centres: positions into the candidate arrays, the
 // neighbourhood rows they own, and their observed histograms.
+// The shape of the circles that match a motif: their mean size and their mean
+// composition as proportions. Every circle counts once, whatever its size, so
+// one dense neighbourhood cannot outvote a dozen sparse ones.
+struct MatchedShape {
+    double mean_cells = 0.0;
+    std::vector<double> mean_composition;
+};
+
+MatchedShape matched_shape(const std::vector<int>& histograms,
+                           const std::vector<unsigned char>& matched,
+                           const int n_rows,
+                           const int n_labels) {
+    MatchedShape shape;
+    shape.mean_composition.assign(n_labels, 0.0);
+    int hits = 0;
+    for (int i = 0; i < n_rows; ++i) {
+        if (!matched[i]) continue;
+        const int* row = row_of(histograms, i, n_labels);
+        const int total = std::accumulate(row, row + n_labels, 0);
+        if (total <= 0) continue;
+        ++hits;
+        shape.mean_cells += total;
+        for (int d = 0; d < n_labels; ++d) {
+            shape.mean_composition[d] += static_cast<double>(row[d]) / total;
+        }
+    }
+    if (hits > 0) {
+        shape.mean_cells /= hits;
+        for (double& value : shape.mean_composition) value /= hits;
+    }
+    return shape;
+}
+
 struct SampleTestSet {
     std::vector<int> positions;
     std::vector<int> rows;
@@ -1167,6 +1200,10 @@ Result run_significance_test(const Dataset& data,
         if (test.significant) ++result.n_significant_motifs;
         const std::vector<unsigned char>& matched = reported_matches[rank];
         test.disjoint_support = reported_support[rank];
+        const MatchedShape shape =
+            matched_shape(test_histograms, matched, n_test, n_labels);
+        test.mean_cells = shape.mean_cells;
+        test.mean_composition = shape.mean_composition;
         test.match_mask.assign(n_cells, 0);
         for (int i = 0; i < n_test; ++i) {
             if (matched[i]) test.match_mask[candidates.centers[split.test[i]]] = 1;
@@ -1188,14 +1225,39 @@ Result run_significance_test(const Dataset& data,
                 : (evidence.observed > 0 ? std::numeric_limits<double>::infinity() : 1.0);
             evidence.p_value = (1.0 + draws.at_least[sample][c]) / (config.permutations + 1.0);
             if (!set.rows.empty()) {
+                const int sample_rows = static_cast<int>(set.rows.size());
                 const std::vector<unsigned char> sample_matched = motif_match_rows(
-                    set.histograms, static_cast<int>(set.rows.size()), n_labels, test.pattern,
+                    set.histograms, sample_rows, n_labels, test.pattern,
                     config.rho, config.metric);
                 evidence.disjoint_support =
                     disjoint_support(sample_matched, set.positions, candidates, n_cells);
+                const MatchedShape sample_shape =
+                    matched_shape(set.histograms, sample_matched, sample_rows, n_labels);
+                evidence.mean_cells = sample_shape.mean_cells;
+                evidence.mean_composition = sample_shape.mean_composition;
             }
             if (evidence.p_value <= config.alpha) ++test.replicated_in;
             test.per_sample.push_back(evidence);
+        }
+        // Spread of the per-sample compositions, over the samples that hold the
+        // motif at all. It says whether every sample sees the same mixture.
+        std::vector<const SampleEvidence*> seen;
+        for (const SampleEvidence& evidence : test.per_sample) {
+            if (evidence.observed > 0 && !evidence.mean_composition.empty()) seen.push_back(&evidence);
+        }
+        if (seen.size() > 1) {
+            test.composition_sd.assign(n_labels, 0.0);
+            for (int d = 0; d < n_labels; ++d) {
+                double mean = 0.0;
+                for (const SampleEvidence* evidence : seen) mean += evidence->mean_composition[d];
+                mean /= seen.size();
+                double variance = 0.0;
+                for (const SampleEvidence* evidence : seen) {
+                    const double diff = evidence->mean_composition[d] - mean;
+                    variance += diff * diff;
+                }
+                test.composition_sd[d] = std::sqrt(variance / (seen.size() - 1));
+            }
         }
         result.motif_tests.push_back(std::move(test));
     }

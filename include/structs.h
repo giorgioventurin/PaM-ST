@@ -96,6 +96,8 @@ struct SampleEvidence {
     double null_sd = 0.0;
     double lift = 0.0;
     double p_value = 1.0;  // permutation p-value within this sample, unadjusted
+    double mean_cells = 0.0;             // mean cells inside the matching circles
+    std::vector<double> mean_composition;  // their mean proportions, per label
 };
 
 struct MotifTest {
@@ -114,6 +116,14 @@ struct MotifTest {
     double p_value_adjusted = 1.0;  // family-wise adjusted (Westfall-Young)
     double lift = 0.0;              // observed / null mean
     int disjoint_support = 0;       // occurrences sharing no cell
+
+    // What the matching circles actually look like: their mean size and their
+    // mean proportions per label, each circle weighted equally so that large
+    // neighbourhoods do not dominate. composition_sd is the spread of the
+    // per-sample means, and stays empty for a single sample.
+    double mean_cells = 0.0;
+    std::vector<double> mean_composition;
+    std::vector<double> composition_sd;
 
     // Multi-sample runs only: the same evidence split by sample, and the number
     // of samples whose own p-value reaches alpha (descriptive, not adjusted).
