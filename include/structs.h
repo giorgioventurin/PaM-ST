@@ -35,8 +35,15 @@ enum class StageErrorControl { None, Holm };
 enum class NeighborhoodMode { Overlapping, Covering };
 enum class NullModel { Global, Block };
 // How candidate motifs are ranked and tested. Count is the original
-// most-frequent-motif test; MinP ranks by family-wise adjusted significance.
-enum class MotifStatistic { Count, MinP };
+// most-frequent-motif test; MinP ranks a family chosen on half the tissue by
+// family-wise adjusted significance; MaxSearch reruns the whole search inside
+// every permutation, so nothing is chosen in advance and no split is needed.
+enum class MotifStatistic { Count, MinP, MaxSearch };
+
+// The per-candidate score MaxSearch takes the best of. PExact is the pooled
+// rank of the count among all labellings; PTail its continuous Poisson
+// approximation; Z the standardised excess.
+enum class SearchStatistic { PExact, PTail, Z };
 
 // Command-line spelling of each enum value, indexed by the enum's integer value.
 template <typename Enum> struct EnumNames;
@@ -56,7 +63,10 @@ template <> struct EnumNames<NullModel> {
     static constexpr std::array<const char*, 2> names{"global", "block"};
 };
 template <> struct EnumNames<MotifStatistic> {
-    static constexpr std::array<const char*, 2> names{"count", "minp"};
+    static constexpr std::array<const char*, 3> names{"count", "minp", "maxsearch"};
+};
+template <> struct EnumNames<SearchStatistic> {
+    static constexpr std::array<const char*, 3> names{"pexact", "ptail", "z"};
 };
 
 struct AnalysisConfig {
@@ -73,6 +83,7 @@ struct AnalysisConfig {
     int max_motifs = 1;
     double alpha = 0.05;
     MotifStatistic statistic = MotifStatistic::Count;
+    SearchStatistic search_statistic = SearchStatistic::PExact;
     int min_support = 10;      // smallest observed count a candidate may have
     int min_types = 0;         // 0 disables the composition filter
     int min_type_cells = 1;    // cells a type needs to count towards min_types
@@ -137,6 +148,7 @@ struct Result {
     int tested_motifs = 1;
     int n_significant_motifs = 0;
     int candidate_family_size = 0;  // candidates tested by the significance search
+    int universe_size = 0;          // MaxSearch: patterns proposed by any labelling
     int selection_center_count = 0; // centers that chose the family
     int test_center_count = 0;      // centers the family was tested on
     int split_discarded_count = 0;  // centers dropped at tile edges

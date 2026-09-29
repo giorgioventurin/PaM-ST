@@ -52,6 +52,7 @@ struct CompositionClasses {
     std::vector<int> rows;            // first count vector seen for each class, flattened
     std::vector<int> multiplicities;  // neighbourhoods in each class
     std::vector<int> first_index;     // neighbourhood where each class first appears
+    std::vector<int> class_of_row;  // class of every row, in row order
 };
 
 struct MotifCandidate {
@@ -263,6 +264,7 @@ CompositionClasses composition_classes(const std::vector<int>& histograms,
         }
         const auto [it, inserted] =
             index_of.try_emplace(std::move(key), static_cast<int>(out.multiplicities.size()));
+        out.class_of_row.push_back(it->second);
         if (inserted) {
             out.rows.insert(out.rows.end(), row, row + k);
             out.multiplicities.push_back(1);
@@ -1008,6 +1010,405 @@ LabelShufflePlan restrict_to_test_tiles(const LabelShufflePlan& plan,
     return restricted;
 }
 
+// ---------------------------------------------------------------------------
+// Max-search test
+//
+// The whole search is the statistic. Every labelling - the observed one and
+// each permutation - proposes its own candidates under the same rule and is
+// scored against the same pooled reference, so the real tissue is simply one of
+// the m+1 labellings. Nothing is chosen in advance, which is why this test
+// needs no checkerboard split and can use every neighbourhood.
+
+// Patterns proposed by any labelling, keyed by their composition class so that
+// the same mixture found in different labellings is one entry.
+struct PatternUniverse {
+    std::unordered_map<std::vector<int>, int, VectorHash> id_of;
+    std::vector<int> rows;  // size x n_labels, the first raw vector seen
+    int size = 0;
+
+    int intern(const int* pattern, const int n_labels) {
+        std::vector<int> key(pattern, pattern + n_labels);
+        if (const int divisor = composition_divisor(pattern, n_labels); divisor > 1) {
+            for (int& value : key) value /= divisor;
+        }
+        const auto [it, inserted] = id_of.try_emplace(std::move(key), size);
+        if (inserted) {
+            rows.insert(rows.end(), pattern, pattern + n_labels);
+            ++size;
+        }
+        return it->second;
+    }
+};
+
+// The candidates one labelling proposes: the filters the family uses, applied
+// to every centre. Identical for the observed tissue and for a permutation.
+//
+// The support filters are answered class by class rather than row by row: every
+// row of a class shares its direction, so the classes within rho of a candidate
+// give its matching rows directly. Scanning all rows per candidate instead is
+// what made this loop the cost of the whole test.
+std::vector<int> search_candidates(const std::vector<int>& histograms,
+                                   const std::vector<int>& positions,
+                                   const CandidateNeighborhoods& candidates,
+                                   const AnalysisConfig& config,
+                                   const int n_labels,
+                                   const int n_cells,
+                                   PatternUniverse& universe) {
+    const int n = static_cast<int>(positions.size());
+    const ScoredClasses classes = score_classes(
+        histograms, n, n_labels, config.rho, config.metric, config.threads);
+    const int class_count = classes.size();
+    std::vector<int> ids;
+    const bool js = config.metric == DistanceMetric::JensenShannon;
+
+    if (config.rho == 0.0 || js) {
+        // Exact matching and Jensen-Shannon keep the straightforward path.
+        for (int i = 0; i < class_count; ++i) {
+            const int* pattern = row_of(classes.classes.rows, i, n_labels);
+            if (!passes_family_filters(pattern, classes.counts[i], n_labels, config)) continue;
+            const std::vector<unsigned char> matched = motif_match_rows(
+                histograms, n, n_labels, std::vector<int>(pattern, pattern + n_labels),
+                config.rho, config.metric);
+            if (disjoint_support(matched, positions, candidates, n_cells) < config.min_support) {
+                continue;
+            }
+            ids.push_back(universe.intern(pattern, n_labels));
+        }
+        return ids;
+    }
+
+    // Rows of each class, in row order.
+    std::vector<int> class_start(class_count + 1, 0);
+    for (const int cls : classes.classes.class_of_row) ++class_start[cls + 1];
+    for (int i = 0; i < class_count; ++i) class_start[i + 1] += class_start[i];
+    std::vector<int> rows_by_class(n, 0);
+    {
+        std::vector<int> cursor(class_start.begin(), class_start.end() - 1);
+        for (int row = 0; row < n; ++row) {
+            rows_by_class[cursor[classes.classes.class_of_row[row]]++] = row;
+        }
+    }
+
+    const KDTreeND tree(classes.points, n_labels, classes.classes.multiplicities);
+    const double rho2 = config.rho * config.rho;
+    // Generation stamps instead of a cleared mask, so each candidate costs only
+    // the cells it actually touches.
+    std::vector<int> stamp(n_cells, 0);
+    int generation = 0;
+    std::vector<int> hits;
+    std::vector<int> rows;
+    for (int i = 0; i < class_count; ++i) {
+        const int* pattern = row_of(classes.classes.rows, i, n_labels);
+        if (!passes_family_filters(pattern, classes.counts[i], n_labels, config)) continue;
+        hits.clear();
+        tree.neighbors_within(row_of(classes.points, i, n_labels), rho2, hits);
+        rows.clear();
+        for (const int cls : hits) {
+            rows.insert(rows.end(), rows_by_class.begin() + class_start[cls],
+                        rows_by_class.begin() + class_start[cls + 1]);
+        }
+        std::sort(rows.begin(), rows.end());
+        ++generation;
+        int support = 0;
+        for (const int row : rows) {
+            const std::vector<int>& cells = candidates.neighbors[candidates.rows[positions[row]]];
+            if (std::any_of(cells.begin(), cells.end(),
+                            [&](const int cell) { return stamp[cell] == generation; })) {
+                continue;
+            }
+            for (const int cell : cells) stamp[cell] = generation;
+            ++support;
+        }
+        if (support < config.min_support) continue;
+        ids.push_back(universe.intern(pattern, n_labels));
+    }
+    return ids;
+}
+
+// How extreme a count is for its pattern, smaller being more extreme. The
+// second entry breaks ties in the discrete rank deterministically, which keeps
+// the statistic a function of the labelling alone.
+using SearchScore = std::pair<double, double>;
+
+SearchScore search_score(const int count,
+                         const std::vector<int>& sorted_pool,
+                         const double mean,
+                         const AnalysisConfig& config) {
+    const int pool = static_cast<int>(sorted_pool.size());
+    const int at_least = pool - static_cast<int>(
+        std::lower_bound(sorted_pool.begin(), sorted_pool.end(), count) - sorted_pool.begin());
+    const double rank_p = static_cast<double>(at_least) / pool;
+    const double excess = (count - mean) / std::sqrt(std::max(mean, 1e-9));
+    switch (config.search_statistic) {
+        case SearchStatistic::Z:
+            return {-excess, rank_p};
+        case SearchStatistic::PTail:
+            // Poisson tail, monotone in the excess for a fixed mean.
+            return {std::exp(-0.5 * std::max(0.0, excess) * std::max(0.0, excess)), -excess};
+        case SearchStatistic::PExact:
+        default:
+            return {rank_p, -excess};
+    }
+}
+
+Result run_max_search_test(const Dataset& data,
+                           const AnalysisConfig& config,
+                           const std::vector<int>& permutable_cells,
+                           const LabelShufflePlan& shuffle_plan,
+                           const CandidateNeighborhoods& candidates) {
+    const int n_cells = static_cast<int>(data.labels.size());
+    const int n_labels = static_cast<int>(data.label_names.size());
+    const int n_samples = data.sample_count();
+    const int m = config.permutations;
+    const int pool = m + 1;
+    Result result = start_result(data, config, permutable_cells, shuffle_plan, candidates);
+
+    const int step = std::max(1, pool / 20);  // progress lines, whatever the budget
+    const int n_centers = static_cast<int>(candidates.rows.size());
+    std::vector<int> all_positions(n_centers);
+    std::iota(all_positions.begin(), all_positions.end(), 0);
+    // Centres grouped by sample, for the per-sample evidence.
+    std::vector<std::vector<int>> sample_positions(n_samples);
+    for (int position = 0; position < n_centers; ++position) {
+        sample_positions[data.sample_of(candidates.centers[position])].push_back(position);
+    }
+    std::vector<std::vector<int>> sample_rows(n_samples);
+    for (int sample = 0; sample < n_samples; ++sample) {
+        for (const int position : sample_positions[sample]) {
+            sample_rows[sample].push_back(candidates.rows[position]);
+        }
+    }
+
+    // Pass 1: every labelling proposes its own candidates.
+    PatternUniverse universe;
+    std::vector<std::vector<int>> proposed(pool);
+    {
+        std::vector<int> labels = data.labels;
+        std::mt19937 rng(config.seed);
+        for (int j = 0; j < pool; ++j) {
+            if (j > 0) shuffle_labels_within_groups(shuffle_plan, labels, rng);
+            const std::vector<int> histograms =
+                label_histograms(candidates.neighbors, candidates.rows, labels, n_labels,
+                                 config.threads);
+            proposed[j] = search_candidates(histograms, all_positions, candidates, config,
+                                            n_labels, n_cells, universe);
+            if ((j + 1) % step == 0 || j + 1 == pool) {
+                std::cerr << "  search " << (j + 1) << '/' << pool << ", universe "
+                          << universe.size << '\n';
+            }
+        }
+    }
+    result.universe_size = universe.size;
+    result.candidate_family_size = static_cast<int>(proposed[0].size());
+    std::cerr << "Observed tissue proposes " << proposed[0].size() << " candidates; "
+              << universe.size << " patterns proposed by any labelling\n";
+
+    // The universe as a query family, so every labelling can be counted on all
+    // of it - a pattern needs its count everywhere, not only where it was
+    // proposed.
+    CandidateFamily family;
+    family.size = universe.size;
+    family.patterns = universe.rows;
+    if (config.rho > 0.0) {
+        const bool js = config.metric == DistanceMetric::JensenShannon;
+        family.points = js ? probability_rows(family.patterns, family.size, n_labels)
+                           : normalized_rows(family.patterns, family.size, n_labels);
+        if (js) {
+            family.entropies.resize(family.size);
+            for (int i = 0; i < family.size; ++i) {
+                family.entropies[i] =
+                    shannon_entropy(row_of(family.points, i, n_labels), n_labels);
+            }
+        }
+    }
+
+    // Pass 2: replay the same labellings and count every pattern of the
+    // universe on each, pooled over samples and kept per sample as well.
+    std::vector<int> counts(static_cast<std::size_t>(family.size) * pool, 0);
+    std::vector<std::vector<int>> observed_by_sample(n_samples, std::vector<int>(family.size, 0));
+    std::vector<std::vector<long long>> sample_sum(n_samples, std::vector<long long>(family.size, 0));
+    std::vector<std::vector<long long>> sample_sum_sq(n_samples, std::vector<long long>(family.size, 0));
+    std::vector<std::vector<int>> sample_at_least(n_samples, std::vector<int>(family.size, 0));
+    {
+        std::vector<int> labels = data.labels;
+        std::mt19937 rng(config.seed);
+        std::vector<int> draw(family.size, 0);
+        for (int j = 0; j < pool; ++j) {
+            if (j > 0) shuffle_labels_within_groups(shuffle_plan, labels, rng);
+            const std::vector<int> histograms =
+                label_histograms(candidates.neighbors, candidates.rows, labels, n_labels,
+                                 config.threads);
+            for (int sample = 0; sample < n_samples; ++sample) {
+                if (sample_positions[sample].empty()) continue;
+                count_family(subset_rows(histograms, sample_positions[sample], n_labels),
+                             static_cast<int>(sample_positions[sample].size()), n_labels,
+                             family, config, draw.data());
+                for (int c = 0; c < family.size; ++c) {
+                    counts[static_cast<std::size_t>(c) * pool + j] += draw[c];
+                    if (j == 0) {
+                        observed_by_sample[sample][c] = draw[c];
+                        continue;
+                    }
+                    sample_sum[sample][c] += draw[c];
+                    sample_sum_sq[sample][c] += static_cast<long long>(draw[c]) * draw[c];
+                    if (draw[c] >= observed_by_sample[sample][c]) ++sample_at_least[sample][c];
+                }
+            }
+            if ((j + 1) % step == 0 || j + 1 == pool) {
+                std::cerr << "  count " << (j + 1) << '/' << pool << '\n';
+            }
+        }
+    }
+
+    // Scores: the pooled rank of every labelling's count, pattern by pattern.
+    std::vector<SearchScore> score(static_cast<std::size_t>(family.size) * pool);
+    std::vector<double> pattern_mean(family.size, 0.0);
+    {
+        std::vector<int> sorted(pool);
+        for (int c = 0; c < family.size; ++c) {
+            const int* row = counts.data() + static_cast<std::size_t>(c) * pool;
+            std::copy(row, row + pool, sorted.begin());
+            std::sort(sorted.begin(), sorted.end());
+            const double mean =
+                static_cast<double>(std::accumulate(row, row + pool, 0LL)) / pool;
+            pattern_mean[c] = mean;
+            for (int j = 0; j < pool; ++j) {
+                score[static_cast<std::size_t>(c) * pool + j] =
+                    search_score(row[j], sorted, mean, config);
+            }
+        }
+    }
+
+    // Each labelling keeps only its best candidate; those m+1 values are the
+    // reference the observed patterns are judged against.
+    std::vector<SearchScore> best(pool, SearchScore{2.0, 0.0});
+    for (int j = 0; j < pool; ++j) {
+        for (const int c : proposed[j]) {
+            const SearchScore& s = score[static_cast<std::size_t>(c) * pool + j];
+            if (s < best[j]) best[j] = s;
+        }
+    }
+
+    // Report the observed tissue's candidates, most extreme first, skipping
+    // near-duplicates of something already reported.
+    std::vector<int> order = proposed[0];
+    std::sort(order.begin(), order.end(), [&](const int a, const int b) {
+        const SearchScore& sa = score[static_cast<std::size_t>(a) * pool];
+        const SearchScore& sb = score[static_cast<std::size_t>(b) * pool];
+        return sa != sb ? sa < sb : a < b;
+    });
+    const std::vector<int> observed_histograms = candidates.observed_histograms;
+    const double min_separation = 2.0 * config.rho;
+    const bool js = config.metric == DistanceMetric::JensenShannon;
+    std::vector<int> reported;
+    for (const int c : order) {
+        if (static_cast<int>(reported.size()) >= config.max_motifs) break;
+        const bool distinct = config.rho == 0.0 ||
+            std::all_of(reported.begin(), reported.end(), [&](const int kept) {
+                const double* a = row_of(family.points, c, n_labels);
+                const double* b = row_of(family.points, kept, n_labels);
+                double distance2 = 0.0;
+                if (js) {
+                    distance2 = jensen_shannon_divergence_from_entropy(
+                        a, family.entropies[c], b, family.entropies[kept], n_labels);
+                } else {
+                    for (int d = 0; d < n_labels; ++d) {
+                        const double diff = a[d] - b[d];
+                        distance2 += diff * diff;
+                    }
+                }
+                return distance2 > min_separation * min_separation + 1e-12;
+            });
+        if (distinct) reported.push_back(c);
+    }
+
+    for (int rank = 0; rank < static_cast<int>(reported.size()); ++rank) {
+        const int c = reported[rank];
+        const int* row = counts.data() + static_cast<std::size_t>(c) * pool;
+        const SearchScore& observed_score = score[static_cast<std::size_t>(c) * pool];
+        MotifTest test;
+        test.rank = rank + 1;
+        test.observed = row[0];
+        test.pattern.assign(row_of(family.patterns, c, n_labels),
+                            row_of(family.patterns, c, n_labels) + n_labels);
+        test.null_counts.assign(row + 1, row + pool);
+        // Pooled rank of the observed count among all m+1 labellings.
+        test.p_value = static_cast<double>(
+            std::count_if(row, row + pool,
+                          [&](const int value) { return value >= row[0]; })) / pool;
+        // How often any labelling's best candidate was at least this extreme.
+        int at_least = 0;
+        for (int j = 0; j < pool; ++j) {
+            if (!(observed_score < best[j])) ++at_least;
+        }
+        test.p_value_adjusted = static_cast<double>(at_least) / pool;
+        const double mean = std::accumulate(row + 1, row + pool, 0LL) / static_cast<double>(m);
+        double variance = 0.0;
+        for (int j = 1; j < pool; ++j) variance += (row[j] - mean) * (row[j] - mean);
+        test.null_mean = mean;
+        test.null_sd = std::sqrt(variance / m);
+        test.lift = mean > 0.0 ? test.observed / mean
+                               : (test.observed > 0 ? std::numeric_limits<double>::infinity() : 1.0);
+        if (test.null_sd > 0.0) {
+            test.z_score = (test.observed - test.null_mean) / test.null_sd;
+        } else if (test.observed != test.null_mean) {
+            const double inf = std::numeric_limits<double>::infinity();
+            test.z_score = test.observed > test.null_mean ? inf : -inf;
+        }
+        test.significant = test.p_value_adjusted <= config.alpha;
+        if (test.significant) ++result.n_significant_motifs;
+
+        const std::vector<unsigned char> matched = motif_match_rows(
+            observed_histograms, n_centers, n_labels, test.pattern, config.rho, config.metric);
+        test.disjoint_support = disjoint_support(matched, all_positions, candidates, n_cells);
+        test.match_mask.assign(n_cells, 0);
+        for (int i = 0; i < n_centers; ++i) {
+            if (matched[i]) test.match_mask[candidates.centers[i]] = 1;
+        }
+        const MatchedShape shape =
+            matched_shape(observed_histograms, matched, n_centers, n_labels);
+        test.mean_cells = shape.mean_cells;
+        test.mean_composition = shape.mean_composition;
+
+        for (int sample = 0; n_samples > 1 && sample < n_samples; ++sample) {
+            SampleEvidence evidence;
+            evidence.observed = observed_by_sample[sample][c];
+            evidence.null_mean = static_cast<double>(sample_sum[sample][c]) / m;
+            const double mean_sq = static_cast<double>(sample_sum_sq[sample][c]) / m;
+            evidence.null_sd =
+                std::sqrt(std::max(0.0, mean_sq - evidence.null_mean * evidence.null_mean));
+            evidence.lift = evidence.null_mean > 0.0
+                ? evidence.observed / evidence.null_mean
+                : (evidence.observed > 0 ? std::numeric_limits<double>::infinity() : 1.0);
+            evidence.p_value = (1.0 + sample_at_least[sample][c]) / pool;
+            if (!sample_positions[sample].empty()) {
+                const std::vector<int> sample_histograms =
+                    subset_rows(observed_histograms, sample_positions[sample], n_labels);
+                const int rows = static_cast<int>(sample_positions[sample].size());
+                const std::vector<unsigned char> sample_matched = motif_match_rows(
+                    sample_histograms, rows, n_labels, test.pattern, config.rho, config.metric);
+                evidence.disjoint_support =
+                    disjoint_support(sample_matched, sample_positions[sample], candidates, n_cells);
+                const MatchedShape sample_shape =
+                    matched_shape(sample_histograms, sample_matched, rows, n_labels);
+                evidence.mean_cells = sample_shape.mean_cells;
+                evidence.mean_composition = sample_shape.mean_composition;
+            }
+            if (evidence.p_value <= config.alpha) ++test.replicated_in;
+            test.per_sample.push_back(evidence);
+        }
+        result.motif_tests.push_back(std::move(test));
+    }
+    if (result.motif_tests.empty()) {
+        result.motif_tests.push_back(summarize_motif_test(
+            {0, 0, std::vector<int>(n_labels, 0)},
+            std::vector<int>(m, 0), 1, config.alpha));
+    }
+    result.tested_motifs = static_cast<int>(result.motif_tests.size());
+    result.selected_rank = 1;
+    return result;
+}
+
 // Reports the most significant candidates instead of the most frequent one.
 //
 // The family is chosen on one half of a checkerboard of tiles and everything
@@ -1392,9 +1793,19 @@ Result most_frequent_pattern_test(const Dataset& data, const AnalysisConfig& con
     const std::vector<int> observed_histograms = label_histograms(
         neighbors, rows, data.labels, static_cast<int>(data.label_names.size()), config.threads);
     const CandidateNeighborhoods candidates{centers, neighbors, rows, observed_histograms};
-    Result result = config.statistic == MotifStatistic::MinP
-        ? run_significance_test(data, config, permutable_cells, shuffle_plan, candidates)
-        : run_pattern_test_prepared(data, config, permutable_cells, shuffle_plan, candidates, false);
+    Result result;
+    switch (config.statistic) {
+        case MotifStatistic::MinP:
+            result = run_significance_test(data, config, permutable_cells, shuffle_plan, candidates);
+            break;
+        case MotifStatistic::MaxSearch:
+            result = run_max_search_test(data, config, permutable_cells, shuffle_plan, candidates);
+            break;
+        default:
+            result = run_pattern_test_prepared(
+                data, config, permutable_cells, shuffle_plan, candidates, false);
+            break;
+    }
     result.active_label_count = static_cast<int>(data.label_names.size()) -
         static_cast<int>(config.frozen_cell_types.size());
     if (covering) {

@@ -18,6 +18,9 @@ public:
     // need not be one of the tree's own points.
     int weighted_count_within(const double* query, double radius2) const;
 
+    // The input indices of those points, appended to out (which is not cleared).
+    void neighbors_within(const double* query, double radius2, std::vector<int>& out) const;
+
 private:
     struct Node {
         int lo = 0;
@@ -55,6 +58,8 @@ private:
     void count_pairs_above(int node_idx, int ordered_pos, const double* query,
                            double radius2, PairCounts& counts) const;
     int count_within(int node_idx, const double* query, double radius2) const;
+    void collect_within(int node_idx, const double* query, double radius2,
+                        std::vector<int>& out) const;
 };
 
 #endif  // PAM_ST_KDTREE_H

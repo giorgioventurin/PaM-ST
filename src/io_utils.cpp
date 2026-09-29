@@ -202,20 +202,29 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "alpha", config.alpha);
     write_field(os, separator, "error_control", name_of(config.error_control));
     write_field(os, separator, "max_motifs", config.max_motifs);
-    if (config.statistic == MotifStatistic::MinP) {
+    if (config.statistic != MotifStatistic::Count) {
         write_field(os, separator, "statistic", name_of(config.statistic));
         write_field(os, separator, "candidate_family_size", result.candidate_family_size);
         write_field(os, separator, "min_support", config.min_support);
         write_field(os, separator, "min_types", config.min_types);
         write_field(os, separator, "min_type_cells", config.min_type_cells);
-        write_field(os, separator, "split_size", config.split_size);
-        write_field(os, separator, "selection_centers", result.selection_center_count);
-        write_field(os, separator, "test_centers", result.test_center_count);
-        write_field(os, separator, "split_edge_centers_dropped", result.split_discarded_count);
+        if (config.statistic == MotifStatistic::MinP) {
+            write_field(os, separator, "split_size", config.split_size);
+            write_field(os, separator, "selection_centers", result.selection_center_count);
+            write_field(os, separator, "test_centers", result.test_center_count);
+            write_field(os, separator, "split_edge_centers_dropped",
+                        result.split_discarded_count);
+        } else {
+            write_field(os, separator, "search_statistic", name_of(config.search_statistic));
+            write_field(os, separator, "pattern_universe_size", result.universe_size);
+            write_field(os, separator, "test_centers", result.candidate_center_count);
+        }
         write_field(os, separator, "disjoint_support", result.selected().disjoint_support);
         write_field(os, separator, "p_value_adjusted", result.selected().p_value_adjusted);
         write_field(os, separator, "lift", result.selected().lift);
-        write_field(os, separator, "family_error_control", "westfall-young-fwer");
+        write_field(os, separator, "family_error_control",
+                    config.statistic == MotifStatistic::MinP ? "westfall-young-fwer"
+                                                             : "max-search-fwer");
     }
     write_field(os, separator, "tested_motifs", result.tested_motifs);
     write_field(os, separator, "n_significant_motifs", result.n_significant_motifs);
@@ -499,7 +508,7 @@ void write_outputs(const std::string& out_dir,
         }
     }
 
-    if (config.statistic == MotifStatistic::MinP) {
+    if (config.statistic != MotifStatistic::Count) {
         std::ofstream f = open_output_file(out_dir, "motif_significance.csv");
         f << "rank,observed_frequency,disjoint_support,null_mean,null_sd,lift,z_score,"
              "p_raw,p_adjusted,significant,"
@@ -525,7 +534,7 @@ void write_outputs(const std::string& out_dir,
         }
     }
 
-    if (config.statistic == MotifStatistic::MinP && several_samples) {
+    if (config.statistic != MotifStatistic::Count && several_samples) {
         // The same motifs sample by sample. Per-sample p-values are descriptive:
         // the family-wise guarantee is carried by p_adjusted in
         // motif_significance.csv, which pools all samples.

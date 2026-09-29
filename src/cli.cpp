@@ -47,8 +47,11 @@ void usage(const char* program) {
         << "  --alpha A           Pointwise level or target FDR (default: 0.05)\n"
         << "  --max-motifs K      Motifs to report "
            "(frequency search: also the number tested; default: 1; alias: --k)\n"
-        << "  --statistic S       count (most frequent motif, default) or minp "
-           "(most significant)\n"
+        << "  --statistic S       count (most frequent motif, default), minp "
+           "(most significant, chosen on half the tissue) or maxsearch "
+           "(the search itself is the statistic; no split)\n"
+        << "  --search-statistic S  What maxsearch takes the best of: pexact "
+           "(default), ptail or z\n"
         << "  --min-support N     Smallest observed count a candidate may have "
            "(minp only; default: 10)\n"
         << "  --min-types M       Require M cell types in a candidate "
@@ -89,6 +92,8 @@ CliOptions parse_args(const int argc, char** argv) {
     bool block_option_set = false;
     bool min_support_set = false;
     bool family_filter_set = false;
+    bool split_size_set = false;
+    bool search_statistic_set = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string key = argv[i];
@@ -127,6 +132,11 @@ CliOptions parse_args(const int argc, char** argv) {
         else if (key == "--max-motifs" || key == "--k") {
             config.max_motifs = std::stoi(need_value(key));
         }
+        else if (key == "--search-statistic") {
+            search_statistic_set = true;
+            config.search_statistic = parse_enum<SearchStatistic>(
+                need_value(key), "search-statistic", "search statistics");
+        }
         else if (key == "--statistic") {
             config.statistic =
                 parse_enum<MotifStatistic>(need_value(key), "statistic", "statistics");
@@ -144,6 +154,7 @@ CliOptions parse_args(const int argc, char** argv) {
             family_filter_set = true;
         }
         else if (key == "--split-size") {
+            split_size_set = true;
             config.split_size = parse_block_number(need_value(key), key);
             family_filter_set = true;
         }
@@ -188,8 +199,14 @@ CliOptions parse_args(const int argc, char** argv) {
     for (std::size_t i = 0; i < options.inputs.size(); ++i) {
         options.input += (i ? ";" : "") + options.inputs[i];
     }
-    if (options.inputs.size() > 1 && config.statistic != MotifStatistic::MinP) {
-        throw std::runtime_error("Several --input files require --statistic minp");
+    const bool searches_family = config.statistic == MotifStatistic::MinP ||
+                                 config.statistic == MotifStatistic::MaxSearch;
+    if (options.inputs.size() > 1 && !searches_family) {
+        throw std::runtime_error(
+            "Several --input files require --statistic minp or maxsearch");
+    }
+    if (search_statistic_set && config.statistic != MotifStatistic::MaxSearch) {
+        throw std::runtime_error("--search-statistic requires --statistic maxsearch");
     }
     if (block_option_set && config.null_model != NullModel::Block) {
         throw std::runtime_error("Block options require --null-model block");
@@ -200,32 +217,41 @@ CliOptions parse_args(const int argc, char** argv) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
     }
     if (config.max_motifs < 1) throw std::runtime_error("max-motifs must be at least 1");
-    if (config.statistic == MotifStatistic::MinP) {
+    if (searches_family) {
+        const std::string mode = name_of(config.statistic);
         if (config.min_support < 1) throw std::runtime_error("min-support must be at least 1");
         if (config.min_types < 0) throw std::runtime_error("min-types must be non-negative");
         if (config.min_type_cells < 1) {
             throw std::runtime_error("min-type-cells must be at least 1");
         }
-        if (!(config.split_size > 0.0)) {
-            throw std::runtime_error("split-size must be greater than 0");
-        }
-        if (config.split_size <= 2.0 * config.radius) {
-            throw std::runtime_error(
-                "split-size must exceed twice the radius, or no neighbourhood fits "
-                "inside a tile");
+        // maxsearch proposes candidates from every labelling, so it needs no
+        // selection/testing split and ignores --split-size.
+        if (config.statistic == MotifStatistic::MinP) {
+            if (!(config.split_size > 0.0)) {
+                throw std::runtime_error("split-size must be greater than 0");
+            }
+            if (config.split_size <= 2.0 * config.radius) {
+                throw std::runtime_error(
+                    "split-size must exceed twice the radius, or no neighbourhood fits "
+                    "inside a tile");
+            }
+        } else if (split_size_set) {
+            throw std::runtime_error("--split-size has no effect with --statistic maxsearch");
         }
         if (config.freeze_by_abundance) {
             throw std::runtime_error(
-                "--statistic minp does not support --freeze-by-abundance yet");
+                "--statistic " + mode +
+                " does not support --freeze-by-abundance yet");
         }
         if (config.error_control != ErrorControl::Pointwise) {
             throw std::runtime_error(
-                "--statistic minp controls family-wise error itself; use "
-                "--error-control pointwise");
+                "--statistic " + mode +
+                " controls family-wise error itself; use --error-control pointwise");
         }
     } else if (min_support_set || family_filter_set) {
         throw std::runtime_error(
-            "--min-support, --min-types and --min-type-cells require --statistic minp");
+            "--min-support, --min-types and --min-type-cells require "
+            "--statistic minp or maxsearch");
     }
     if (config.freeze_by_abundance && !config.frozen_cell_types.empty()) {
         throw std::runtime_error(

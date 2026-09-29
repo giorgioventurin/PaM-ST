@@ -190,6 +190,30 @@ void KDTreeND::count_pairs_above(const int node_idx,
 }
 
 // Whole-subtree shortcut uses the prefix sums, so no per-node totals are needed.
+void KDTreeND::neighbors_within(const double* query, const double radius2,
+                                std::vector<int>& out) const {
+    collect_within(0, query, radius2, out);
+}
+
+void KDTreeND::collect_within(const int node_idx, const double* query, const double radius2,
+                              std::vector<int>& out) const {
+    if (node_idx < 0 || nodes_.empty()) return;
+    if (bbox_outside_radius2(node_idx, query, radius2)) return;
+    const Node& node = nodes_[node_idx];
+    if (node.left < 0 && node.right < 0) {
+        for (int p = node.lo; p < node.hi; ++p) {
+            if (within_radius2(p, query, radius2)) out.push_back(indices_[p]);
+        }
+        return;
+    }
+    if (bbox_inside_radius2(node_idx, query, radius2)) {
+        for (int p = node.lo; p < node.hi; ++p) out.push_back(indices_[p]);
+        return;
+    }
+    collect_within(node.left, query, radius2, out);
+    collect_within(node.right, query, radius2, out);
+}
+
 int KDTreeND::count_within(const int node_idx, const double* query, const double radius2) const {
     if (node_idx < 0 || nodes_.empty()) return 0;
     if (bbox_outside_radius2(node_idx, query, radius2)) return 0;
