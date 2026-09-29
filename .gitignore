@@ -36,3 +36,4 @@ docs/*.toc
 .DS_Store
 __pycache__/
 *.pyc
+docs/
