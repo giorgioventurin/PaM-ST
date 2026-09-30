@@ -40,13 +40,13 @@ std::vector<int> KDTreeND::weighted_neighbor_counts(const double radius2,
         for (int worker = lo; worker < hi; ++worker) {
             PairCounts& counts = per_worker[worker];
             for (int p = worker; p < n_; p += workers) {
-                counts.own[p] += ordered_weights_[p];  // the point itself
                 count_pairs_above(0, p, ordered_row(p), radius2, counts);
             }
         }
     });
 
-    std::vector<int> ordered_counts(n_, 0);
+    // Every point also counts itself.
+    std::vector<int> ordered_counts(ordered_weights_);
     std::vector<int> ranges(n_ + 1, 0);
     for (const PairCounts& counts : per_worker) {
         for (int p = 0; p < n_; ++p) ordered_counts[p] += counts.own[p];
@@ -109,6 +109,9 @@ int KDTreeND::build(const int lo, const int hi) {
     return node_idx;
 }
 
+// The pair test is the running sum of squared differences in dimension order.
+// Since the partial sums only grow, testing the whole sum once is the same
+// test as stopping at the first partial sum above radius2.
 bool KDTreeND::within_radius2(const int ordered_pos,
                               const double* query,
                               const double radius2) const {
@@ -117,11 +120,17 @@ bool KDTreeND::within_radius2(const int ordered_pos,
     for (int d = 0; d < dim_; ++d) {
         const double diff = candidate[d] - query[d];
         distance2 += diff * diff;
-        if (distance2 > radius2) return false;
     }
-    return true;
+    return distance2 <= radius2;
 }
 
+// The box bounds below compare, dimension by dimension, a difference at least
+// (or at most) as large as that of any pair they stand for. Rounding is
+// monotone, so every rounded term, and so every rounded partial sum, bounds
+// the pair's own the same way: a bound beyond radius2 proves every pair
+// beyond it, and one within radius2 proves every pair within.
+
+// Lower bound on the squared distance from the query to any point in the box.
 bool KDTreeND::bbox_outside_radius2(const int node_idx,
                                     const double* query,
                                     const double radius2) const {
@@ -129,19 +138,15 @@ bool KDTreeND::bbox_outside_radius2(const int node_idx,
     const double* minv = bbox_min_.data() + static_cast<std::size_t>(node_idx) * dim_;
     const double* maxv = bbox_max_.data() + static_cast<std::size_t>(node_idx) * dim_;
     for (int d = 0; d < dim_; ++d) {
-        if (query[d] < minv[d]) {
-            const double diff = minv[d] - query[d];
-            out += diff * diff;
-            if (out > radius2) return true;
-        } else if (query[d] > maxv[d]) {
-            const double diff = query[d] - maxv[d];
-            out += diff * diff;
-            if (out > radius2) return true;
-        }
+        // At most one side is positive; both are exact maxima with zero.
+        const double below = positive_part(minv[d] - query[d]);
+        const double above = positive_part(query[d] - maxv[d]);
+        out += below * below + above * above;
     }
-    return false;
+    return out > radius2;
 }
 
+// Upper bound on the squared distance from the query to any point in the box.
 bool KDTreeND::bbox_inside_radius2(const int node_idx,
                                    const double* query,
                                    const double radius2) const {
@@ -151,10 +156,11 @@ bool KDTreeND::bbox_inside_radius2(const int node_idx,
     for (int d = 0; d < dim_; ++d) {
         const double min_diff = query[d] - minv[d];
         const double max_diff = query[d] - maxv[d];
-        out += std::max(min_diff * min_diff, max_diff * max_diff);
-        if (out > radius2) return false;
+        const double min_term = min_diff * min_diff;
+        const double max_term = max_diff * max_diff;
+        out += min_term > max_term ? min_term : max_term;
     }
-    return true;
+    return out <= radius2;
 }
 
 // Visits only positions above `ordered_pos`, crediting every pair found to both

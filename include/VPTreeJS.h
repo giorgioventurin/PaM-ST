@@ -8,7 +8,8 @@
 class VPTreeJS {
 public:
     // points holds weights.size() rows of dim probabilities with their Shannon
-    // entropies; all three vectors must outlive the tree.
+    // entropies, as shannon_entropy computes them; all three vectors must
+    // outlive the tree. Query entropies are expected the same way.
     VPTreeJS(const std::vector<double>& points,
              const std::vector<double>& entropies,
              int dim,
@@ -40,17 +41,38 @@ private:
     std::vector<int> indices_;
     std::vector<Node> nodes_;
     std::vector<int> node_weight_sums_;
+    // Mixture-entropy terms each point fixes by itself (see js_row_terms), and
+    // the square roots of its probabilities.
+    std::vector<double> half_terms_;
+    std::vector<double> self_terms_;
+    std::vector<double> roots_;
     // Vantage points copied per node, so a query walks contiguous memory.
     std::vector<double> node_points_;
+    std::vector<double> node_half_terms_;
+    std::vector<double> node_roots_;
     std::vector<double> node_entropies_;
+    // Per node, the box spanned by the square roots of every point in its subtree.
+    std::vector<double> box_lo_;
+    std::vector<double> box_hi_;
+
+    // One query row with its entropy, its own terms and its square roots.
+    struct Query {
+        const double* row;
+        const double* half;
+        const double* self;
+        const double* roots;
+        double entropy;
+    };
 
     const double* row(int point) const;
+    const double* half_row(int point) const;
+    const double* self_row(int point) const;
+    const double* root_row(int point) const;
     double distance2(int a, int b) const;
     int select_vantage(int lo, int hi) const;
     int build(int lo, int hi);
     // point is the querying tree point, or -1 for an external query row.
-    int count(int node_idx, int point, const double* query, double query_entropy,
-              double radius2, double radius) const;
+    int count(int node_idx, int point, const Query& query, double radius2, double radius) const;
 };
 
 #endif  // PAM_ST_VPTREEJS_H

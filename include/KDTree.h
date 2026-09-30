@@ -32,7 +32,7 @@ private:
         std::vector<int> ranges;  // difference array over whole subtrees credited at once
     };
 
-    static constexpr int kLeafSize = 32;
+    static constexpr int kLeafSize = 16;
 
     const std::vector<double>& points_;
     const std::vector<int>& weights_;
