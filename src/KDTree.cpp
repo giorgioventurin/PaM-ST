@@ -45,7 +45,7 @@ KDTreeND::KDTreeND(const std::vector<double>& points,
 // The margin covers the rounding in either sum many times over, so a box
 // failing this check would fail bbox_inside_radius2 too.
 bool KDTreeND::may_be_inside(const int node_idx, const double radius2) const {
-    return half_diagonal2_[node_idx] <= radius2 * (1.0 + 1e-9);
+    return !(half_diagonal2_[node_idx] > radius2 * (1.0 + 1e-9));
 }
 
 std::vector<int> KDTreeND::weighted_neighbor_counts(const double radius2,
@@ -131,7 +131,9 @@ int KDTreeND::build(const int lo, const int hi) {
 
 // The pair test is the running sum of squared differences in dimension order.
 // Since the partial sums only grow, testing the whole sum once is the same
-// test as stopping at the first partial sum above radius2.
+// test as stopping at the first partial sum above radius2. The tests here are
+// written as "not above", as the stepwise ones were, so a NaN radius still
+// counts every pair.
 bool KDTreeND::within_radius2(const int ordered_pos,
                               const double* query,
                               const double radius2) const {
@@ -141,7 +143,7 @@ bool KDTreeND::within_radius2(const int ordered_pos,
         const double diff = candidate[d] - query[d];
         distance2 += diff * diff;
     }
-    return distance2 <= radius2;
+    return !(distance2 > radius2);
 }
 
 // The box bounds below compare, dimension by dimension, a difference at least
@@ -180,7 +182,7 @@ bool KDTreeND::bbox_inside_radius2(const int node_idx,
         const double max_term = max_diff * max_diff;
         out += min_term > max_term ? min_term : max_term;
     }
-    return out <= radius2;
+    return !(out > radius2);
 }
 
 // Visits only positions above `ordered_pos`, crediting every pair found to both
