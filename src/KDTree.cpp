@@ -26,6 +26,26 @@ KDTreeND::KDTreeND(const std::vector<double>& points,
         ordered_weights_[p] = weights_[indices_[p]];
         weight_prefix_[p + 1] = weight_prefix_[p] + ordered_weights_[p];
     }
+
+    // Every point is at least half the box diagonal from its farthest corner,
+    // so a box with a longer half-diagonal than the radius is never inside it.
+    half_diagonal2_.resize(nodes_.size());
+    for (std::size_t node = 0; node < nodes_.size(); ++node) {
+        const double* minv = bbox_min_.data() + node * dim_;
+        const double* maxv = bbox_max_.data() + node * dim_;
+        double sum = 0.0;
+        for (int d = 0; d < dim_; ++d) {
+            const double half = 0.5 * (maxv[d] - minv[d]);
+            sum += half * half;
+        }
+        half_diagonal2_[node] = sum;
+    }
+}
+
+// The margin covers the rounding in either sum many times over, so a box
+// failing this check would fail bbox_inside_radius2 too.
+bool KDTreeND::may_be_inside(const int node_idx, const double radius2) const {
+    return !(half_diagonal2_[node_idx] > radius2 * (1.0 + 1e-9));
 }
 
 std::vector<int> KDTreeND::weighted_neighbor_counts(const double radius2,
@@ -40,13 +60,13 @@ std::vector<int> KDTreeND::weighted_neighbor_counts(const double radius2,
         for (int worker = lo; worker < hi; ++worker) {
             PairCounts& counts = per_worker[worker];
             for (int p = worker; p < n_; p += workers) {
-                counts.own[p] += ordered_weights_[p];  // the point itself
                 count_pairs_above(0, p, ordered_row(p), radius2, counts);
             }
         }
     });
 
-    std::vector<int> ordered_counts(n_, 0);
+    // Every point also counts itself.
+    std::vector<int> ordered_counts(ordered_weights_);
     std::vector<int> ranges(n_ + 1, 0);
     for (const PairCounts& counts : per_worker) {
         for (int p = 0; p < n_; ++p) ordered_counts[p] += counts.own[p];
@@ -109,6 +129,11 @@ int KDTreeND::build(const int lo, const int hi) {
     return node_idx;
 }
 
+// The pair test is the running sum of squared differences in dimension order.
+// Since the partial sums only grow, testing the whole sum once is the same
+// test as stopping at the first partial sum above radius2. The tests here are
+// written as "not above", as the stepwise ones were, so a NaN radius still
+// counts every pair.
 bool KDTreeND::within_radius2(const int ordered_pos,
                               const double* query,
                               const double radius2) const {
@@ -117,11 +142,17 @@ bool KDTreeND::within_radius2(const int ordered_pos,
     for (int d = 0; d < dim_; ++d) {
         const double diff = candidate[d] - query[d];
         distance2 += diff * diff;
-        if (distance2 > radius2) return false;
     }
-    return true;
+    return !(distance2 > radius2);
 }
 
+// The box bounds below compare, dimension by dimension, a difference at least
+// (or at most) as large as that of any pair they stand for. Rounding is
+// monotone, so every rounded term, and so every rounded partial sum, bounds
+// the pair's own the same way: a bound beyond radius2 proves every pair
+// beyond it, and one within radius2 proves every pair within.
+
+// Lower bound on the squared distance from the query to any point in the box.
 bool KDTreeND::bbox_outside_radius2(const int node_idx,
                                     const double* query,
                                     const double radius2) const {
@@ -129,19 +160,15 @@ bool KDTreeND::bbox_outside_radius2(const int node_idx,
     const double* minv = bbox_min_.data() + static_cast<std::size_t>(node_idx) * dim_;
     const double* maxv = bbox_max_.data() + static_cast<std::size_t>(node_idx) * dim_;
     for (int d = 0; d < dim_; ++d) {
-        if (query[d] < minv[d]) {
-            const double diff = minv[d] - query[d];
-            out += diff * diff;
-            if (out > radius2) return true;
-        } else if (query[d] > maxv[d]) {
-            const double diff = query[d] - maxv[d];
-            out += diff * diff;
-            if (out > radius2) return true;
-        }
+        // At most one side is positive, and both are exact maxima with zero,
+        // so their sum is exactly the gap on that side.
+        const double gap = positive_part(minv[d] - query[d]) + positive_part(query[d] - maxv[d]);
+        out += gap * gap;
     }
-    return false;
+    return out > radius2;
 }
 
+// Upper bound on the squared distance from the query to any point in the box.
 bool KDTreeND::bbox_inside_radius2(const int node_idx,
                                    const double* query,
                                    const double radius2) const {
@@ -151,10 +178,11 @@ bool KDTreeND::bbox_inside_radius2(const int node_idx,
     for (int d = 0; d < dim_; ++d) {
         const double min_diff = query[d] - minv[d];
         const double max_diff = query[d] - maxv[d];
-        out += std::max(min_diff * min_diff, max_diff * max_diff);
-        if (out > radius2) return false;
+        const double min_term = min_diff * min_diff;
+        const double max_term = max_diff * max_diff;
+        out += min_term > max_term ? min_term : max_term;
     }
-    return true;
+    return !(out > radius2);
 }
 
 // Visits only positions above `ordered_pos`, crediting every pair found to both
@@ -179,7 +207,7 @@ void KDTreeND::count_pairs_above(const int node_idx,
         }
         return;
     }
-    if (bbox_inside_radius2(node_idx, query, radius2)) {
+    if (may_be_inside(node_idx, radius2) && bbox_inside_radius2(node_idx, query, radius2)) {
         counts.own[ordered_pos] += weight_prefix_[node.hi] - weight_prefix_[first];
         counts.ranges[first] += ordered_weights_[ordered_pos];
         counts.ranges[node.hi] -= ordered_weights_[ordered_pos];
@@ -201,7 +229,7 @@ int KDTreeND::count_within(const int node_idx, const double* query, const double
         }
         return total;
     }
-    if (bbox_inside_radius2(node_idx, query, radius2)) {
+    if (may_be_inside(node_idx, radius2) && bbox_inside_radius2(node_idx, query, radius2)) {
         return weight_prefix_[node.hi] - weight_prefix_[node.lo];
     }
     return count_within(node.left, query, radius2) +

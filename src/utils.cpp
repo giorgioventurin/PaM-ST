@@ -7,8 +7,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <exception>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -31,17 +33,6 @@ struct GridKeyHash {
         const auto b = static_cast<std::uint64_t>(key.y) * 0xC2B2AE3D27D4EB4FULL;
         const auto s = static_cast<std::uint64_t>(key.sample) * 0x165667B19E3779F9ULL;
         return static_cast<std::size_t>(a ^ (b + (a << 6U) + (a >> 2U)) ^ s);
-    }
-};
-
-struct VectorHash {
-    std::size_t operator()(const std::vector<int>& v) const {
-        std::size_t h = 1469598103934665603ULL;
-        for (const int x : v) {
-            h ^= static_cast<std::uint64_t>(x) + 0x9E3779B97F4A7C15ULL;
-            h *= 1099511628211ULL;
-        }
-        return h;
     }
 };
 
@@ -235,9 +226,79 @@ std::vector<int> select_histogram_rows(const std::vector<int>& histograms,
 
 int composition_divisor(const int* row, const int k) {
     int divisor = 0;
-    for (int d = 0; d < k; ++d) divisor = std::gcd(divisor, row[d]);
+    for (int d = 0; d < k && divisor != 1; ++d) divisor = std::gcd(divisor, row[d]);
     return divisor;
 }
+
+// Open-addressing index of count vectors up to a common factor: each vector is
+// keyed by itself divided by the gcd of its entries. Classes are numbered in
+// order of first insertion, so the numbering does not depend on the hash.
+class CompositionTable {
+public:
+    CompositionTable(const int k, const int capacity) : k_(k), reduced_(k) {
+        std::size_t slots = 16;
+        while (slots < 2 * static_cast<std::size_t>(std::max(capacity, 1))) slots *= 2;
+        slots_.assign(slots, -1);
+        mask_ = slots - 1;
+        keys_.reserve(static_cast<std::size_t>(std::max(capacity, 1)) * k);
+    }
+
+    // Class of the row, and whether the row started it.
+    std::pair<int, bool> insert(const int* row) {
+        std::size_t slot = locate(row);
+        if (slots_[slot] >= 0) return {slots_[slot], false};
+        if (2 * (static_cast<std::size_t>(size_) + 1) > slots_.size()) {
+            grow();
+            slot = locate(row);
+        }
+        slots_[slot] = size_;
+        keys_.insert(keys_.end(), reduced_.begin(), reduced_.end());
+        return {size_++, true};
+    }
+
+    // Class of the row, or -1 when no inserted row has its composition.
+    int find(const int* row) { return slots_[locate(row)]; }
+
+private:
+    int k_;
+    int size_ = 0;
+    std::size_t mask_ = 0;
+    std::vector<int> slots_;  // class index, or -1 for an empty slot
+    std::vector<int> keys_;   // reduced vector of each class, flattened
+    std::vector<int> reduced_;
+
+    std::size_t hash(const int* key) const {
+        std::uint64_t h = 0x9E3779B97F4A7C15ULL;
+        for (int d = 0; d < k_; ++d) {
+            h = (h ^ static_cast<std::uint32_t>(key[d])) * 0xFF51AFD7ED558CCDULL;
+        }
+        return static_cast<std::size_t>(h ^ (h >> 29U));
+    }
+
+    // Reduces the row into reduced_ and returns its slot: the one holding its
+    // class, or the empty one where the class would go.
+    std::size_t locate(const int* row) {
+        const int divisor = composition_divisor(row, k_);
+        for (int d = 0; d < k_; ++d) reduced_[d] = divisor > 1 ? row[d] / divisor : row[d];
+        std::size_t slot = hash(reduced_.data()) & mask_;
+        while (slots_[slot] >= 0) {
+            const int* key = keys_.data() + static_cast<std::size_t>(slots_[slot]) * k_;
+            if (std::equal(key, key + k_, reduced_.begin())) break;
+            slot = (slot + 1) & mask_;
+        }
+        return slot;
+    }
+
+    void grow() {
+        slots_.assign(slots_.size() * 2, -1);
+        mask_ = slots_.size() - 1;
+        for (int c = 0; c < size_; ++c) {
+            std::size_t slot = hash(keys_.data() + static_cast<std::size_t>(c) * k_) & mask_;
+            while (slots_[slot] >= 0) slot = (slot + 1) & mask_;
+            slots_[slot] = c;
+        }
+    }
+};
 
 bool same_composition(const int* lhs, const int* rhs, const int k) {
     const int lhs_divisor = composition_divisor(lhs, k);
@@ -252,23 +313,17 @@ bool same_composition(const int* lhs, const int* rhs, const int k) {
 CompositionClasses composition_classes(const std::vector<int>& histograms,
                                        const int n,
                                        const int k) {
-    std::unordered_map<std::vector<int>, int, VectorHash> index_of;
-    index_of.reserve(static_cast<std::size_t>(n * 1.3));
+    CompositionTable table(k, n);
     CompositionClasses out;
     for (int i = 0; i < n; ++i) {
         const int* row = row_of(histograms, i, k);
-        std::vector<int> key(row, row + k);
-        if (const int divisor = composition_divisor(row, k); divisor > 1) {
-            for (int& value : key) value /= divisor;
-        }
-        const auto [it, inserted] =
-            index_of.try_emplace(std::move(key), static_cast<int>(out.multiplicities.size()));
+        const auto [index, inserted] = table.insert(row);
         if (inserted) {
             out.rows.insert(out.rows.end(), row, row + k);
             out.multiplicities.push_back(1);
             out.first_index.push_back(i);
         } else {
-            ++out.multiplicities[it->second];
+            ++out.multiplicities[index];
         }
     }
     return out;
@@ -424,67 +479,99 @@ std::vector<MotifCandidate> top_motifs(const std::vector<int>& histograms,
     return motifs;
 }
 
-// Marks the histogram rows lying within rho of the pattern.
-std::vector<unsigned char> motif_match_rows(const std::vector<int>& histograms,
-                                            const int n,
-                                            const int k,
-                                            const std::vector<int>& pattern,
-                                            const double rho,
-                                            const DistanceMetric metric) {
-    std::vector<unsigned char> out(n, 0);
-    if (rho == 0.0) {
-        for (int i = 0; i < n; ++i) {
-            out[i] = same_composition(row_of(histograms, i, k), pattern.data(), k);
+// Histogram rows prepared once for matching against many patterns. Each row is
+// normalised (l2) or turned into proportions with its entropy (js) with the
+// same arithmetic as a one-off comparison, so every match is unchanged; only
+// the per-row work is no longer repeated for every pattern.
+class RowMatcher {
+public:
+    RowMatcher(const std::vector<int>& histograms, const int n, const int k,
+               const double rho, const DistanceMetric metric)
+        : histograms_(histograms), n_(n), k_(k), rho_(rho),
+          js_(metric == DistanceMetric::JensenShannon) {
+        if (rho == 0.0) return;
+        if (!js_) {
+            points_ = normalized_rows(histograms, n, k);
+            return;
         }
-        return out;
+        points_ = probability_rows(histograms, n, k);
+        entropies_.resize(n);
+        half_.resize(points_.size());
+        self_.resize(points_.size());
+        for (int i = 0; i < n; ++i) {
+            const std::size_t offset = static_cast<std::size_t>(i) * k;
+            entropies_[i] = shannon_entropy(points_.data() + offset, k);
+            js_row_terms(points_.data() + offset, k, half_.data() + offset, self_.data() + offset);
+        }
     }
 
-    const double rho2 = rho * rho;
-    if (metric == DistanceMetric::JensenShannon) {
-        const int pattern_total = std::accumulate(pattern.begin(), pattern.end(), 0);
+    // Marks the rows lying within rho of the pattern.
+    std::vector<unsigned char> match(const int* pattern) const {
+        const int k = k_;
+        std::vector<unsigned char> out(n_, 0);
+        if (rho_ == 0.0) {
+            for (int i = 0; i < n_; ++i) {
+                out[i] = same_composition(row_of(histograms_, i, k), pattern, k);
+            }
+            return out;
+        }
+
+        const double rho2 = rho_ * rho_;
         std::vector<double> pn(k, 0.0);
-        if (pattern_total > 0) {
-            const double inv = 1.0 / static_cast<double>(pattern_total);
+        if (js_) {
+            const int pattern_total = std::accumulate(pattern, pattern + k, 0);
+            if (pattern_total > 0) {
+                const double inv = 1.0 / static_cast<double>(pattern_total);
+                for (int d = 0; d < k; ++d) pn[d] = pattern[d] * inv;
+            }
+            const double pattern_entropy = shannon_entropy(pn.data(), k);
+            std::vector<double> pattern_terms(2 * static_cast<std::size_t>(k));
+            js_row_terms(pn.data(), k, pattern_terms.data(), pattern_terms.data() + k);
+            const double limit = rho2 + 1e-12;
+            for (int i = 0; i < n_; ++i) {
+                // The divergence is computed only when its bounds straddle the limit.
+                const std::size_t offset = static_cast<std::size_t>(i) * k;
+                const double* row = points_.data() + offset;
+                const DivergenceBounds bounds = jensen_shannon_bounds(row, pn.data(), k);
+                if (bounds.lo > limit) continue;
+                out[i] = bounds.hi <= limit ||
+                    jensen_shannon_divergence_from_terms(
+                        row, half_.data() + offset, self_.data() + offset, entropies_[i],
+                        pn.data(), pattern_terms.data(), pattern_entropy, k) <= limit;
+            }
+            return out;
+        }
+
+        double pnorm2 = 0.0;
+        for (int d = 0; d < k; ++d) pnorm2 += static_cast<double>(pattern[d]) * pattern[d];
+        if (pnorm2 > 0.0) {
+            const double inv = 1.0 / std::sqrt(pnorm2);
             for (int d = 0; d < k; ++d) pn[d] = pattern[d] * inv;
         }
-        const double pattern_entropy = shannon_entropy(pn.data(), k);
-        std::vector<double> qn(k, 0.0);
-        for (int i = 0; i < n; ++i) {
-            const int* row = row_of(histograms, i, k);
-            const int total = std::accumulate(row, row + k, 0);
-            std::fill(qn.begin(), qn.end(), 0.0);
-            if (total > 0) {
-                const double inv = 1.0 / static_cast<double>(total);
-                for (int d = 0; d < k; ++d) qn[d] = row[d] * inv;
+        for (int i = 0; i < n_; ++i) {
+            const double* row = points_.data() + static_cast<std::size_t>(i) * k;
+            // Partial sums only grow, so stopping once one exceeds rho2 is exact.
+            double dist2 = 0.0;
+            for (int d = 0; d < k && dist2 <= rho2; ++d) {
+                const double diff = row[d] - pn[d];
+                dist2 += diff * diff;
             }
-            const double row_entropy = shannon_entropy(qn.data(), k);
-            out[i] = jensen_shannon_divergence_from_entropy(
-                qn.data(), row_entropy, pn.data(), pattern_entropy, k) <= rho2 + 1e-12;
+            out[i] = dist2 <= rho2;
         }
         return out;
     }
 
-    double pnorm2 = 0.0;
-    for (const int v : pattern) pnorm2 += static_cast<double>(v) * v;
-    std::vector<double> pn(k, 0.0);
-    if (pnorm2 > 0.0) {
-        const double inv = 1.0 / std::sqrt(pnorm2);
-        for (int d = 0; d < k; ++d) pn[d] = pattern[d] * inv;
-    }
-    for (int i = 0; i < n; ++i) {
-        const int* row = row_of(histograms, i, k);
-        double norm2 = 0.0;
-        for (int d = 0; d < k; ++d) norm2 += static_cast<double>(row[d]) * row[d];
-        const double inv = norm2 > 0.0 ? 1.0 / std::sqrt(norm2) : 0.0;
-        double dist2 = 0.0;
-        for (int d = 0; d < k; ++d) {
-            const double diff = row[d] * inv - pn[d];
-            dist2 += diff * diff;
-        }
-        out[i] = dist2 <= rho2;
-    }
-    return out;
-}
+private:
+    const std::vector<int>& histograms_;
+    int n_;
+    int k_;
+    double rho_;
+    bool js_;
+    std::vector<double> points_;     // normalised or probability rows
+    std::vector<double> entropies_;  // js only
+    std::vector<double> half_;       // js only, see js_row_terms
+    std::vector<double> self_;
+};
 
 // Scatters a row mask onto cell ids, for the match files.
 std::vector<unsigned char> motif_matches_for_centers(const std::vector<int>& histograms,
@@ -494,8 +581,9 @@ std::vector<unsigned char> motif_matches_for_centers(const std::vector<int>& his
                                                      const DistanceMetric metric,
                                                      const std::vector<int>& centers,
                                                      const int n_cells) {
-    const std::vector<unsigned char> rows = motif_match_rows(
-        histograms, static_cast<int>(centers.size()), k, pattern, rho, metric);
+    const std::vector<unsigned char> rows =
+        RowMatcher(histograms, static_cast<int>(centers.size()), k, rho, metric)
+            .match(pattern.data());
     std::vector<unsigned char> out(n_cells, 0);
     for (int i = 0; i < static_cast<int>(centers.size()); ++i) out[centers[i]] = rows[i];
     return out;
@@ -515,30 +603,23 @@ struct CandidateFamily {
 
 // Counts every candidate in one (permuted) tissue.
 void count_family(const std::vector<int>& histograms, const int n, const int n_labels,
-                  const CandidateFamily& family, const AnalysisConfig& config, int* out) {
+                  const CandidateFamily& family, const AnalysisConfig& config,
+                  const int threads, int* out) {
     const double rho = config.rho;
     const bool js = config.metric == DistanceMetric::JensenShannon;
-    const CompositionClasses classes = composition_classes(histograms, n, n_labels);
-    const int m = static_cast<int>(classes.multiplicities.size());
 
     if (rho == 0.0) {
         // Exact proportional match: look each candidate up among the classes.
-        auto reduced_key = [n_labels](const int* row) {
-            std::vector<int> key(row, row + n_labels);
-            if (const int divisor = composition_divisor(row, n_labels); divisor > 1) {
-                for (int& value : key) value /= divisor;
-            }
-            return key;
-        };
-        std::unordered_map<std::vector<int>, int, VectorHash> multiplicity_of;
-        multiplicity_of.reserve(static_cast<std::size_t>(m * 1.3));
-        for (int i = 0; i < m; ++i) {
-            multiplicity_of.emplace(reduced_key(row_of(classes.rows, i, n_labels)),
-                                    classes.multiplicities[i]);
+        CompositionTable table(n_labels, n);
+        std::vector<int> multiplicities;
+        for (int i = 0; i < n; ++i) {
+            const auto [index, inserted] = table.insert(row_of(histograms, i, n_labels));
+            if (inserted) multiplicities.push_back(1);
+            else ++multiplicities[index];
         }
         for (int c = 0; c < family.size; ++c) {
-            const auto it = multiplicity_of.find(reduced_key(row_of(family.patterns, c, n_labels)));
-            out[c] = it == multiplicity_of.end() ? 0 : it->second;
+            const int index = table.find(row_of(family.patterns, c, n_labels));
+            out[c] = index < 0 ? 0 : multiplicities[index];
         }
         return;
     }
@@ -548,6 +629,8 @@ void count_family(const std::vector<int>& histograms, const int n, const int n_l
         std::fill(out, out + family.size, n);
         return;
     }
+    const CompositionClasses classes = composition_classes(histograms, n, n_labels);
+    const int m = static_cast<int>(classes.multiplicities.size());
     const std::vector<double> points = js ? probability_rows(classes.rows, m, n_labels)
                                           : normalized_rows(classes.rows, m, n_labels);
     if (js) {
@@ -556,7 +639,7 @@ void count_family(const std::vector<int>& histograms, const int n, const int n_l
             entropies[i] = shannon_entropy(row_of(points, i, n_labels), n_labels);
         }
         const VPTreeJS tree(points, entropies, n_labels, classes.multiplicities);
-        parallel_for(family.size, config.threads, [&](const int lo, const int hi) {
+        parallel_for(family.size, threads, [&](const int lo, const int hi) {
             for (int c = lo; c < hi; ++c) {
                 out[c] = tree.weighted_count_within(
                     row_of(family.points, c, n_labels), family.entropies[c], rho);
@@ -565,7 +648,7 @@ void count_family(const std::vector<int>& histograms, const int n, const int n_l
         return;
     }
     const KDTreeND tree(points, n_labels, classes.multiplicities);
-    parallel_for(family.size, config.threads, [&](const int lo, const int hi) {
+    parallel_for(family.size, threads, [&](const int lo, const int hi) {
         for (int c = lo; c < hi; ++c) {
             out[c] = tree.weighted_count_within(row_of(family.points, c, n_labels), rho * rho);
         }
@@ -624,6 +707,85 @@ struct NullDraws {
     std::vector<std::vector<int>> at_least;      // draws >= that sample's observed count
 };
 
+// ---------------------------------------------------------------------------
+// Permutations
+
+// How the permutations share the threads: `workers` permutations are counted at
+// once, each with `threads` threads of its own. Whole permutations parallelise
+// best, but each one in flight holds its own histograms, classes and search
+// tree, so with large inputs fewer run at once and each gets more threads.
+struct PermutationWorkers {
+    int workers = 1;
+    int threads = 1;
+};
+
+// Rough working memory of counting one permutation over `rows` neighbourhoods:
+// histograms, composition classes, query rows and search tree, plus its labels.
+std::size_t permutation_bytes(const std::size_t rows, const int n_labels, const std::size_t cells) {
+    return rows * (64 * static_cast<std::size_t>(n_labels) + 96) + cells * sizeof(int);
+}
+
+PermutationWorkers permutation_workers(const AnalysisConfig& config,
+                                       const std::size_t bytes_per_permutation) {
+    constexpr std::size_t kMemoryBudget = std::size_t{2} << 30;  // for permutations in flight
+    const int total = normalize_thread_count(config.threads, std::numeric_limits<int>::max());
+    const std::size_t by_memory =
+        std::max<std::size_t>(1, kMemoryBudget / std::max<std::size_t>(1, bytes_per_permutation));
+    PermutationWorkers pool;
+    pool.workers = static_cast<int>(std::min<std::size_t>(
+        {static_cast<std::size_t>(total), by_memory,
+         static_cast<std::size_t>(std::max(1, config.permutations))}));
+    pool.threads = std::max(1, total / pool.workers);
+    return pool;
+}
+
+// Draws config.permutations label shuffles from one generator seeded with
+// config.seed and calls fn(b, worker, labels, threads) for each. The shuffles
+// are drawn under a lock in permutation order, each continuing from the last,
+// so permutation b sees exactly the labels of a sequential loop; only the
+// counting runs concurrently. fn may write only to what belongs to b or to
+// worker (in [0, pool.workers)).
+template <typename Fn>
+void for_each_permutation(const std::vector<int>& labels,
+                          const LabelShufflePlan& plan,
+                          const AnalysisConfig& config,
+                          const PermutationWorkers& pool,
+                          Fn fn) {
+    const int permutations = config.permutations;
+    std::vector<int> shuffled = labels;
+    std::mt19937 rng(config.seed);
+    std::mutex mutex;
+    int next = 0;
+    int done = 0;
+    std::exception_ptr error;
+    parallel_for_each(pool.workers, pool.workers, [&](const int worker, int) {
+        std::vector<int> own;
+        while (true) {
+            int b = 0;
+            {
+                const std::lock_guard<std::mutex> lock(mutex);
+                if (next == permutations || error) return;
+                b = next++;
+                shuffle_labels_within_groups(plan, shuffled, rng);
+                own = shuffled;
+            }
+            try {
+                fn(b, worker, own, pool.threads);
+            } catch (...) {
+                const std::lock_guard<std::mutex> lock(mutex);
+                if (!error) error = std::current_exception();
+                return;
+            }
+            const std::lock_guard<std::mutex> lock(mutex);
+            ++done;
+            if (done % 50 == 0 || done == permutations) {
+                std::cerr << "  permutation " << done << '/' << permutations << '\n';
+            }
+        }
+    });
+    if (error) std::rethrow_exception(error);
+}
+
 NullDraws null_family_counts(const Dataset& data,
                              const AnalysisConfig& config,
                              const LabelShufflePlan& shuffle_plan,
@@ -637,34 +799,55 @@ NullDraws null_family_counts(const Dataset& data,
     const bool per_sample = n_samples > 1;
     NullDraws draws;
     draws.pooled.assign(static_cast<std::size_t>(family.size) * permutations, 0);
-    if (per_sample) {
-        draws.sum.assign(n_samples, std::vector<long long>(family.size, 0));
-        draws.sum_sq.assign(n_samples, std::vector<long long>(family.size, 0));
-        draws.at_least.assign(n_samples, std::vector<int>(family.size, 0));
+
+    std::size_t largest_set = 0;
+    for (const SampleTestSet& set : sets) largest_set = std::max(largest_set, set.rows.size());
+    const PermutationWorkers pool = permutation_workers(
+        config, permutation_bytes(largest_set, n_labels, data.labels.size()) +
+                    static_cast<std::size_t>(family.size) * 3 * sizeof(double));
+
+    // Per-sample totals are kept per worker and added up at the end. They are
+    // integers, so the order in which the draws arrive does not matter.
+    std::vector<NullDraws> partial(per_sample ? pool.workers : 0);
+    for (NullDraws& part : partial) {
+        part.sum.assign(n_samples, std::vector<long long>(family.size, 0));
+        part.sum_sq.assign(n_samples, std::vector<long long>(family.size, 0));
+        part.at_least.assign(n_samples, std::vector<int>(family.size, 0));
     }
-    std::vector<int> draw(family.size, 0);
-    std::vector<int> labels = data.labels;
-    std::mt19937 rng(config.seed);
-    for (int b = 0; b < permutations; ++b) {
+    for_each_permutation(data.labels, shuffle_plan, config, pool,
+                         [&](const int b, const int worker, const std::vector<int>& labels,
+                             const int threads) {
         // One shuffle moves every sample at once; each sample is then counted
         // on its own, and the pooled count is the sum.
-        shuffle_labels_within_groups(shuffle_plan, labels, rng);
+        std::vector<int> draw(family.size, 0);
         for (int sample = 0; sample < n_samples; ++sample) {
             const SampleTestSet& set = sets[sample];
             if (set.rows.empty()) continue;
-            count_family(
-                label_histograms(neighbors, set.rows, labels, n_labels, config.threads),
-                static_cast<int>(set.rows.size()), n_labels, family, config, draw.data());
+            count_family(label_histograms(neighbors, set.rows, labels, n_labels, threads),
+                         static_cast<int>(set.rows.size()), n_labels, family, config, threads,
+                         draw.data());
             for (int c = 0; c < family.size; ++c) {
                 draws.pooled[static_cast<std::size_t>(c) * permutations + b] += draw[c];
                 if (!per_sample) continue;
-                draws.sum[sample][c] += draw[c];
-                draws.sum_sq[sample][c] += static_cast<long long>(draw[c]) * draw[c];
-                if (draw[c] >= observed_by_sample[sample][c]) ++draws.at_least[sample][c];
+                NullDraws& part = partial[worker];
+                part.sum[sample][c] += draw[c];
+                part.sum_sq[sample][c] += static_cast<long long>(draw[c]) * draw[c];
+                if (draw[c] >= observed_by_sample[sample][c]) ++part.at_least[sample][c];
             }
         }
-        if ((b + 1) % 50 == 0 || b + 1 == permutations) {
-            std::cerr << "  permutation " << (b + 1) << '/' << permutations << '\n';
+    });
+    if (per_sample) {
+        draws.sum = partial[0].sum;
+        draws.sum_sq = partial[0].sum_sq;
+        draws.at_least = partial[0].at_least;
+        for (int worker = 1; worker < pool.workers; ++worker) {
+            for (int sample = 0; sample < n_samples; ++sample) {
+                for (int c = 0; c < family.size; ++c) {
+                    draws.sum[sample][c] += partial[worker].sum[sample][c];
+                    draws.sum_sq[sample][c] += partial[worker].sum_sq[sample][c];
+                    draws.at_least[sample][c] += partial[worker].at_least[sample][c];
+                }
+            }
         }
     }
     return draws;
@@ -767,14 +950,14 @@ std::vector<std::vector<int>> permutation_null_counts(Result& result,
     std::vector<std::vector<int>> null_by_rank(n_tests, std::vector<int>(config.permutations, 0));
     if (fewrs) result.fdr_null_order_statistics.assign(config.permutations, 0);
 
-    std::vector<int> labels = data.labels;
-    std::mt19937 rng(config.seed);
-    for (int b = 0; b < config.permutations; ++b) {
-        shuffle_labels_within_groups(shuffle_plan, labels, rng);
+    const PermutationWorkers pool = permutation_workers(
+        config, permutation_bytes(candidates.rows.size(), n_labels, data.labels.size()));
+    for_each_permutation(data.labels, shuffle_plan, config, pool,
+                         [&](const int b, int, const std::vector<int>& labels, const int threads) {
         const std::vector<MotifCandidate> null_motifs = top_motifs(
-            label_histograms(candidates.neighbors, candidates.rows, labels, n_labels, config.threads),
+            label_histograms(candidates.neighbors, candidates.rows, labels, n_labels, threads),
             static_cast<int>(candidates.centers.size()), n_labels, config.rho, config.metric,
-            config.threads, search_limit, motif_separation);
+            threads, search_limit, motif_separation);
         const int found = static_cast<int>(null_motifs.size());
         for (int rank = 0; rank < std::min(n_tests, found); ++rank) {
             null_by_rank[rank][b] = null_motifs[rank].count;
@@ -782,10 +965,7 @@ std::vector<std::vector<int>> permutation_null_counts(Result& result,
         if (fewrs && config.fdr_order <= found) {
             result.fdr_null_order_statistics[b] = null_motifs[config.fdr_order - 1].count;
         }
-        if ((b + 1) % 50 == 0 || b + 1 == config.permutations) {
-            std::cerr << "  permutation " << (b + 1) << '/' << config.permutations << '\n';
-        }
-    }
+    });
     return null_by_rank;
 }
 
@@ -953,13 +1133,15 @@ std::vector<int> subset_rows(const std::vector<int>& histograms,
 
 // Occurrences sharing no cell, taken greedily in center order: a dense clump of
 // overlapping neighbourhoods counts once, not once per neighbourhood.
+// Stops early once the support reaches `limit`, since it can only grow.
 int disjoint_support(const std::vector<unsigned char>& matched,
                      const std::vector<int>& positions,
                      const CandidateNeighborhoods& candidates,
-                     const int n_cells) {
+                     const int n_cells,
+                     const int limit = std::numeric_limits<int>::max()) {
     std::vector<unsigned char> used(n_cells, 0);
     int support = 0;
-    for (int i = 0; i < static_cast<int>(positions.size()); ++i) {
+    for (int i = 0; i < static_cast<int>(positions.size()) && support < limit; ++i) {
         if (!matched[i]) continue;
         const std::vector<int>& cells = candidates.neighbors[candidates.rows[positions[i]]];
         if (std::any_of(cells.begin(), cells.end(),
@@ -970,6 +1152,17 @@ int disjoint_support(const std::vector<unsigned char>& matched,
         ++support;
     }
     return support;
+}
+
+// Whether the disjoint support reaches min_support. It never exceeds the
+// number of matching rows, which settles most candidates without the scan.
+bool has_disjoint_support(const std::vector<unsigned char>& matched,
+                          const std::vector<int>& positions,
+                          const CandidateNeighborhoods& candidates,
+                          const int n_cells,
+                          const int min_support) {
+    if (std::count(matched.begin(), matched.end(), 1) < min_support) return false;
+    return disjoint_support(matched, positions, candidates, n_cells, min_support) >= min_support;
 }
 
 // True when a cell sits in a tile that the checkerboard assigns to testing.
@@ -1042,16 +1235,22 @@ Result run_significance_test(const Dataset& data,
     const int n_selection = static_cast<int>(split.selection.size());
     const ScoredClasses selection = score_classes(
         selection_histograms, n_selection, n_labels, config.rho, config.metric, config.threads);
+    // Each class is judged on its own, so the classes are judged in parallel;
+    // the family then keeps them in class order.
+    const RowMatcher selection_rows(
+        selection_histograms, n_selection, n_labels, config.rho, config.metric);
+    std::vector<unsigned char> in_family(selection.size(), 0);
+    parallel_for_each(selection.size(), config.threads, [&](const int i, int) {
+        const int* pattern = row_of(selection.classes.rows, i, n_labels);
+        if (!passes_family_filters(pattern, selection.counts[i], n_labels, config)) return;
+        const std::vector<unsigned char> matched = selection_rows.match(pattern);
+        in_family[i] = has_disjoint_support(matched, split.selection, candidates, n_cells,
+                                            config.min_support);
+    });
     CandidateFamily family;
     for (int i = 0; i < selection.size(); ++i) {
+        if (!in_family[i]) continue;
         const int* pattern = row_of(selection.classes.rows, i, n_labels);
-        if (!passes_family_filters(pattern, selection.counts[i], n_labels, config)) continue;
-        const std::vector<unsigned char> matched = motif_match_rows(
-            selection_histograms, n_selection, n_labels,
-            std::vector<int>(pattern, pattern + n_labels), config.rho, config.metric);
-        if (disjoint_support(matched, split.selection, candidates, n_cells) < config.min_support) {
-            continue;
-        }
         family.patterns.insert(family.patterns.end(), pattern, pattern + n_labels);
         family.first_index.push_back(selection.classes.first_index[i]);
         ++family.size;
@@ -1115,7 +1314,7 @@ Result run_significance_test(const Dataset& data,
         set.histograms = subset_rows(candidates.observed_histograms, set.positions, n_labels);
         if (set.rows.empty()) continue;
         count_family(set.histograms, static_cast<int>(set.rows.size()), n_labels, family,
-                     config, observed_by_sample[sample].data());
+                     config, config.threads, observed_by_sample[sample].data());
         for (int c = 0; c < family.size; ++c) family.observed[c] += observed_by_sample[sample][c];
     }
     if (n_samples > 1) {
@@ -1142,6 +1341,7 @@ Result run_significance_test(const Dataset& data,
     // remove rejections, so the family-wise guarantee still holds.
     const double min_separation = 2.0 * config.rho;
     const bool js = config.metric == DistanceMetric::JensenShannon;
+    const RowMatcher test_rows(test_histograms, n_test, n_labels, config.rho, config.metric);
     std::vector<int> reported;
     std::vector<std::vector<unsigned char>> reported_matches;
     std::vector<int> reported_support;
@@ -1165,9 +1365,7 @@ Result run_significance_test(const Dataset& data,
             });
         if (!distinct) continue;
         const int* pattern = row_of(family.patterns, c, n_labels);
-        std::vector<unsigned char> matched = motif_match_rows(
-            test_histograms, n_test, n_labels,
-            std::vector<int>(pattern, pattern + n_labels), config.rho, config.metric);
+        std::vector<unsigned char> matched = test_rows.match(pattern);
         const int support = disjoint_support(matched, split.test, candidates, n_cells);
         if (support < config.min_support) continue;
         reported.push_back(c);
@@ -1226,9 +1424,9 @@ Result run_significance_test(const Dataset& data,
             evidence.p_value = (1.0 + draws.at_least[sample][c]) / (config.permutations + 1.0);
             if (!set.rows.empty()) {
                 const int sample_rows = static_cast<int>(set.rows.size());
-                const std::vector<unsigned char> sample_matched = motif_match_rows(
-                    set.histograms, sample_rows, n_labels, test.pattern,
-                    config.rho, config.metric);
+                const std::vector<unsigned char> sample_matched =
+                    RowMatcher(set.histograms, sample_rows, n_labels, config.rho, config.metric)
+                        .match(test.pattern.data());
                 evidence.disjoint_support =
                     disjoint_support(sample_matched, set.positions, candidates, n_cells);
                 const MatchedShape sample_shape =
@@ -1354,6 +1552,16 @@ double jensen_shannon_divergence_from_entropy(const double* p,
     }
     const double div = hm - 0.5 * (hp + hq);
     return div > 0.0 ? div : 0.0;
+}
+
+void js_row_terms(const double* p, const int k, double* half, double* self) {
+    for (int d = 0; d < k; ++d) {
+        // The same m as the pairwise formula forms: 0.5 * (p + 0) and 0.5 * (p + p).
+        const double m_half = 0.5 * (p[d] + 0.0);
+        const double m_self = 0.5 * (p[d] + p[d]);
+        half[d] = m_half > 0.0 ? m_half * std::log(m_half) : 0.0;
+        self[d] = m_self > 0.0 ? m_self * std::log(m_self) : 0.0;
+    }
 }
 
 Result most_frequent_pattern_test(const Dataset& data, const AnalysisConfig& config) {

@@ -32,7 +32,7 @@ private:
         std::vector<int> ranges;  // difference array over whole subtrees credited at once
     };
 
-    static constexpr int kLeafSize = 32;
+    static constexpr int kLeafSize = 16;
 
     const std::vector<double>& points_;
     const std::vector<int>& weights_;
@@ -45,6 +45,7 @@ private:
     std::vector<double> ordered_points_;
     std::vector<int> ordered_weights_;
     std::vector<int> weight_prefix_;  // weight_prefix_[i] = total weight of positions < i
+    std::vector<double> half_diagonal2_;  // per node, squared half-diagonal of its box
 
     const double* row(int point) const;
     const double* ordered_row(int ordered_pos) const;
@@ -52,6 +53,7 @@ private:
     bool within_radius2(int ordered_pos, const double* query, double radius2) const;
     bool bbox_outside_radius2(int node_idx, const double* query, double radius2) const;
     bool bbox_inside_radius2(int node_idx, const double* query, double radius2) const;
+    bool may_be_inside(int node_idx, double radius2) const;
     void count_pairs_above(int node_idx, int ordered_pos, const double* query,
                            double radius2, PairCounts& counts) const;
     int count_within(int node_idx, const double* query, double radius2) const;
