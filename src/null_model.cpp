@@ -13,14 +13,14 @@ namespace {
 
 std::int64_t tile_index(const double coordinate, const double size) {
     if (!std::isfinite(coordinate)) {
-        throw std::runtime_error("Block null requires finite cell coordinates");
+        throw std::runtime_error("Tile shuffle requires finite cell coordinates");
     }
     const long double index =
         std::floor(static_cast<long double>(coordinate) / static_cast<long double>(size));
     // Exclusive power-of-two bound: INT64_MAX can round up to 2^63 as a float.
     const long double limit = std::ldexp(1.0L, 63);
     if (!std::isfinite(index) || index < -limit || index >= limit) {
-        throw std::runtime_error("Block null tile index exceeds int64 range");
+        throw std::runtime_error("Tile index exceeds int64 range");
     }
     return static_cast<std::int64_t>(index);
 }
@@ -41,12 +41,12 @@ void validate_neighbor_grid_range(const std::array<double, 2>& coordinate, const
 }  // namespace
 
 void validate_null_model_config(const AnalysisConfig& config) {
-    if (!std::isfinite(config.block_size) || config.block_size <= 0.0) {
-        throw std::runtime_error("block-size must be finite and greater than 0");
+    if (!std::isfinite(config.tile_size) || config.tile_size <= 0.0) {
+        throw std::runtime_error("tile-size must be finite and greater than 0");
     }
     if (!std::isfinite(config.radius) || !std::isfinite(config.rho) ||
         !std::isfinite(config.alpha)) {
-        throw std::runtime_error("Block null requires finite analysis parameters");
+        throw std::runtime_error("Tile shuffle requires finite analysis parameters");
     }
 }
 
@@ -68,8 +68,8 @@ LabelShufflePlan make_label_shuffle_plan(const Dataset& data, const AnalysisConf
         const auto& coordinate = data.coords[cell];
         validate_neighbor_grid_range(coordinate, config.radius);
         const Tile tile{data.sample_of(static_cast<int>(cell)),
-                        tile_index(coordinate[0], config.block_size),
-                        tile_index(coordinate[1], config.block_size)};
+                        tile_index(coordinate[0], config.tile_size),
+                        tile_index(coordinate[1], config.tile_size)};
         tiles[tile].push_back(static_cast<int>(cell));
     }
 

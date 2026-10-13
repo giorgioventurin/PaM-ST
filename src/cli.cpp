@@ -32,17 +32,18 @@ void usage(const char* program) {
         << "Usage: " << program << " --input cells.csv [options]\n"
         << "Options:\n"
         << "  --input FILE        Cell table; repeat to analyse several samples together\n"
-        << "  --radius R          Spatial radius (default: 300)\n"
-        << "  --rho RHO           Normalized-composition tolerance (default: 0.05)\n"
-        << "  --permutations M    Number of label permutations (default: 1000)\n"
+        << "  --radius R          Neighbourhood radius (default: 300)\n"
+        << "  --rho RHO           Tolerance on normalised count vectors (default: 0.05)\n"
+        << "  --permutations M    Number of tile shuffles (default: 1000)\n"
         << "  --seed S            RNG seed (default: 37)\n"
-        << "  --block-size L      Side of the square tiles labels are shuffled within "
+        << "  --tile-size L       Side of the square tiles labels are shuffled within "
            "(default: 1000)\n"
         << "  --threads N         Worker threads (default: hardware)\n"
         << "  --alpha A           Significance level (default: 0.05)\n"
-        << "  --min-support N     Smallest number of separate places a pattern needs "
-           "(default: 10)\n"
-        << "  --min-types M       Fewest labels a pattern holds (default: off)\n"
+        << "  --min-labels T      Support threshold: fewest labels a pattern holds "
+           "(default: 0)\n"
+        << "  --min-recurrence K  Recurrence threshold: fewest separate places a "
+           "pattern recurs in (default: 10)\n"
         << "  --output-dir DIR    Write the result CSVs\n"
         << "  --output-file FILE  Write the text report to FILE "
            "(default: DIR/report.txt when --output-dir is set)\n";
@@ -68,11 +69,11 @@ CliOptions parse_args(const int argc, char** argv) {
         else if (key == "--rho") config.rho = std::stod(need_value(key));
         else if (key == "--permutations") config.permutations = std::stoi(need_value(key));
         else if (key == "--seed") config.seed = std::stoi(need_value(key));
-        else if (key == "--block-size") config.block_size = parse_finite(need_value(key), key);
+        else if (key == "--tile-size") config.tile_size = parse_finite(need_value(key), key);
         else if (key == "--threads") config.threads = std::stoi(need_value(key));
         else if (key == "--alpha") config.alpha = std::stod(need_value(key));
-        else if (key == "--min-support") config.min_support = std::stoi(need_value(key));
-        else if (key == "--min-types") config.min_types = std::stoi(need_value(key));
+        else if (key == "--min-recurrence") config.min_recurrence = std::stoi(need_value(key));
+        else if (key == "--min-labels") config.min_labels = std::stoi(need_value(key));
         else if (key == "--help" || key == "-h") {
             usage(argv[0]);
             std::exit(0);
@@ -90,8 +91,8 @@ CliOptions parse_args(const int argc, char** argv) {
     if (config.alpha <= 0.0 || config.alpha >= 1.0) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
     }
-    if (config.min_support < 1) throw std::runtime_error("min-support must be at least 1");
-    if (config.min_types < 0) throw std::runtime_error("min-types must be non-negative");
+    if (config.min_recurrence < 1) throw std::runtime_error("min-recurrence must be at least 1");
+    if (config.min_labels < 0) throw std::runtime_error("min-labels must be non-negative");
     if (config.permutations < 1) throw std::runtime_error("permutations must be at least 1");
     return options;
 }

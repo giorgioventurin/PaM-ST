@@ -297,9 +297,10 @@ struct Proposal {
     int recurrence = 0;
 };
 
-// P^(j): the count vectors of labelling j holding at least min_types labels
-// and recurring in at least min_support separate places. The frequency bounds
-// the recurrence from above, so it rules most classes out before the scan.
+// P^(j): the count vectors of labelling j holding at least tau = min_labels
+// labels and recurring in at least kappa = min_recurrence separate places. The
+// frequency bounds the recurrence from above, so it rules most classes out
+// before the scan.
 std::vector<Proposal> propose(const CompositionIndex& index,
                               const Neighbors& neighbors,
                               const AnalysisConfig& config,
@@ -309,14 +310,14 @@ std::vector<Proposal> propose(const CompositionIndex& index,
     std::vector<Proposal> out;
     std::vector<int> rows;
     for (int cls = 0; cls < index.size(); ++cls) {
-        if (index.frequency(cls) < config.min_support) continue;
+        if (index.frequency(cls) < config.min_recurrence) continue;
         const int* pattern = index.pattern(cls);
         const int labels = static_cast<int>(
             std::count_if(pattern, pattern + n_labels, [](const int v) { return v > 0; }));
-        if (labels < config.min_types) continue;
+        if (labels < config.min_labels) continue;
         index.rows_near(cls, rows);
         const int recurrence = counter.count(rows, neighbors);
-        if (recurrence < config.min_support) continue;
+        if (recurrence < config.min_recurrence) continue;
         out.push_back({universe.intern(pattern, n_labels), cls, recurrence});
     }
     return out;
@@ -398,8 +399,8 @@ void validate_analysis_config(const AnalysisConfig& config) {
     if (config.alpha <= 0.0 || config.alpha >= 1.0) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
     }
-    if (config.min_support < 1) throw std::runtime_error("min-support must be at least 1");
-    if (config.min_types < 0) throw std::runtime_error("min-types must be non-negative");
+    if (config.min_recurrence < 1) throw std::runtime_error("min-recurrence must be at least 1");
+    if (config.min_labels < 0) throw std::runtime_error("min-labels must be non-negative");
 }
 
 }  // namespace

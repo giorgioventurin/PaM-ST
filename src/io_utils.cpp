@@ -114,9 +114,9 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "labels", data.label_names.size());
     write_field(os, separator, "radius", config.radius);
     write_field(os, separator, "rho", config.rho);
-    write_field(os, separator, "min_types", config.min_types);
-    write_field(os, separator, "min_support", config.min_support);
-    write_field(os, separator, "block_size", config.block_size);
+    write_field(os, separator, "min_labels", config.min_labels);
+    write_field(os, separator, "min_recurrence", config.min_recurrence);
+    write_field(os, separator, "tile_size", config.tile_size);
     write_field(os, separator, "permutations", config.permutations);
     write_field(os, separator, "seed", config.seed);
     write_field(os, separator, "alpha", config.alpha);

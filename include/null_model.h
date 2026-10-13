@@ -17,8 +17,8 @@ struct LabelShufflePlan {
 // Throws for invalid tile or analysis parameters.
 void validate_null_model_config(const AnalysisConfig& config);
 
-// Tiles are half-open squares of side block_size with index
-// floor(coordinate / block_size), keyed by sample as well.
+// Tiles are half-open squares of side tile_size with index
+// floor(coordinate / tile_size), keyed by sample as well.
 LabelShufflePlan make_label_shuffle_plan(const Dataset& data, const AnalysisConfig& config);
 
 // Shuffles the current labels independently within each group, leaving all

@@ -34,11 +34,11 @@ struct AnalysisConfig {
     double rho = 0.05;
     int permutations = 1000;
     int seed = 37;
-    double block_size = 1000.0;  // side of the square tiles labels are shuffled within
+    double tile_size = 1000.0;  // L: side of the square tiles labels are shuffled within
     int threads = 0;
     double alpha = 0.05;
-    int min_support = 10;  // smallest number of separate places a pattern needs
-    int min_types = 0;     // fewest labels a pattern holds; 0 disables the filter
+    int min_recurrence = 10;  // kappa: fewest separate places a pattern recurs in
+    int min_labels = 0;       // tau: fewest labels a pattern holds
 };
 
 // A pattern of the observed tissue, with its test result.
