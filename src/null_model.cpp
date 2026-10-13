@@ -11,23 +11,12 @@
 
 namespace {
 
-void validate_grid_config(const AnalysisConfig& config) {
-    if (!std::isfinite(config.block_size) || config.block_size <= 0.0) {
-        throw std::runtime_error("block-size must be finite and greater than 0");
-    }
-    if (!std::isfinite(config.block_origin_x) ||
-        !std::isfinite(config.block_origin_y)) {
-        throw std::runtime_error("block origins must be finite");
-    }
-}
-
-std::int64_t tile_index(const double coordinate, const double origin, const double size) {
+std::int64_t tile_index(const double coordinate, const double size) {
     if (!std::isfinite(coordinate)) {
         throw std::runtime_error("Block null requires finite cell coordinates");
     }
-    const long double index = std::floor(
-        (static_cast<long double>(coordinate) - static_cast<long double>(origin)) /
-        static_cast<long double>(size));
+    const long double index =
+        std::floor(static_cast<long double>(coordinate) / static_cast<long double>(size));
     // Exclusive power-of-two bound: INT64_MAX can round up to 2^63 as a float.
     const long double limit = std::ldexp(1.0L, 63);
     if (!std::isfinite(index) || index < -limit || index >= limit) {
@@ -51,75 +40,41 @@ void validate_neighbor_grid_range(const std::array<double, 2>& coordinate, const
 
 }  // namespace
 
-std::array<std::int64_t, 2> grid_tile(const std::array<double, 2>& coordinate,
-                                      const double size, const double origin_x,
-                                      const double origin_y) {
-    return {tile_index(coordinate[0], origin_x, size), tile_index(coordinate[1], origin_y, size)};
-}
-
 void validate_null_model_config(const AnalysisConfig& config) {
-    if (config.null_model != NullModel::Global && config.null_model != NullModel::Block) {
-        throw std::runtime_error("Unknown null model");
+    if (!std::isfinite(config.block_size) || config.block_size <= 0.0) {
+        throw std::runtime_error("block-size must be finite and greater than 0");
     }
-    if (config.null_model != NullModel::Block) return;
-    validate_grid_config(config);
     if (!std::isfinite(config.radius) || !std::isfinite(config.rho) ||
-        !std::isfinite(config.alpha) || !std::isfinite(config.fdr_failure_probability)) {
+        !std::isfinite(config.alpha)) {
         throw std::runtime_error("Block null requires finite analysis parameters");
     }
 }
 
-LabelShufflePlan make_label_shuffle_plan(
-    const Dataset& data,
-    const std::vector<int>& permutable_cells,
-    const AnalysisConfig& config) {
+LabelShufflePlan make_label_shuffle_plan(const Dataset& data, const AnalysisConfig& config) {
     validate_null_model_config(config);
     const std::size_t n = data.labels.size();
     if (n > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         throw std::runtime_error("Too many cells for the permutation engine");
     }
-    std::vector<unsigned char> eligible(n, 0);
-    for (const int cell : permutable_cells) {
-        if (cell < 0 || static_cast<std::size_t>(cell) >= n) {
-            throw std::runtime_error("Permutable cell index is out of range");
-        }
-        if (eligible[cell]) throw std::runtime_error("Duplicate permutable cell index");
-        eligible[cell] = 1;
+    if (data.coords.size() != n) {
+        throw std::runtime_error("Coordinate and label counts differ");
+    }
+
+    // Tiles are keyed by sample as well, since each sample has its own
+    // coordinate system and the same (x, y) tile means different places.
+    using Tile = std::array<std::int64_t, 3>;
+    std::map<Tile, std::vector<int>> tiles;
+    for (std::size_t cell = 0; cell < n; ++cell) {
+        const auto& coordinate = data.coords[cell];
+        validate_neighbor_grid_range(coordinate, config.radius);
+        const Tile tile{data.sample_of(static_cast<int>(cell)),
+                        tile_index(coordinate[0], config.block_size),
+                        tile_index(coordinate[1], config.block_size)};
+        tiles[tile].push_back(static_cast<int>(cell));
     }
 
     LabelShufflePlan plan;
-    if (config.null_model == NullModel::Global) {
-        // One group per sample: labels are never exchanged between tissues.
-        std::vector<std::vector<int>> by_sample(data.sample_count());
-        for (const int cell : permutable_cells) by_sample[data.sample_of(cell)].push_back(cell);
-        for (auto& cells : by_sample) {
-            if (!cells.empty()) plan.groups.push_back(std::move(cells));
-        }
-    } else {
-        if (data.coords.size() != n) {
-            throw std::runtime_error("Coordinate and label counts differ");
-        }
-        // Tiles are keyed by sample as well, since each sample has its own
-        // coordinate system and the same (x, y) tile means different places.
-        using Tile = std::array<std::int64_t, 3>;
-        std::map<Tile, std::vector<int>> tiles;
-        std::vector<Tile> cell_tiles;
-        cell_tiles.reserve(n);
-        for (std::size_t cell = 0; cell < n; ++cell) {
-            const auto& coordinate = data.coords[cell];
-            const std::array<std::int64_t, 2> tile = grid_tile(
-                coordinate, config.block_size, config.block_origin_x, config.block_origin_y);
-            cell_tiles.push_back({data.sample_of(static_cast<int>(cell)), tile[0], tile[1]});
-            tiles.try_emplace(cell_tiles.back());
-            validate_neighbor_grid_range(coordinate, config.radius);
-        }
-        for (const int cell : permutable_cells) tiles[cell_tiles[cell]].push_back(cell);
-        plan.block_count = static_cast<int>(tiles.size());
-        for (auto& [tile, cells] : tiles) {
-            if (!cells.empty()) plan.groups.push_back(std::move(cells));
-        }
-    }
-
+    for (auto& [tile, cells] : tiles) plan.groups.push_back(std::move(cells));
     for (const auto& group : plan.groups) {
         const bool mixed = std::any_of(group.begin() + 1, group.end(),
             [&](const int cell) { return data.labels[cell] != data.labels[group.front()]; });

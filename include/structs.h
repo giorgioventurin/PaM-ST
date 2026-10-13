@@ -29,74 +29,17 @@ struct Dataset {
     }
 };
 
-enum class DistanceMetric { Euclidean, JensenShannon };
-enum class ErrorControl { Pointwise, FewRSFDR };
-enum class StageErrorControl { None, Holm };
-enum class NeighborhoodMode { Overlapping, Covering };
-enum class NullModel { Global, Block };
-// How candidate motifs are ranked and tested. Count is the original
-// most-frequent-motif test; MinP ranks a family chosen on half the tissue by
-// family-wise adjusted significance; MaxSearch reruns the whole search inside
-// every permutation, so nothing is chosen in advance and no split is needed.
-enum class MotifStatistic { Count, MinP, MaxSearch };
-
-// The per-candidate score MaxSearch takes the best of. PExact is the pooled
-// rank of the count among all labellings; PTail its continuous Poisson
-// approximation; Z the standardised excess.
-enum class SearchStatistic { PExact, PTail, Z };
-
-// Command-line spelling of each enum value, indexed by the enum's integer value.
-template <typename Enum> struct EnumNames;
-template <> struct EnumNames<DistanceMetric> {
-    static constexpr std::array<const char*, 2> names{"l2", "js"};
-};
-template <> struct EnumNames<ErrorControl> {
-    static constexpr std::array<const char*, 2> names{"pointwise", "fewrs-fdr"};
-};
-template <> struct EnumNames<StageErrorControl> {
-    static constexpr std::array<const char*, 2> names{"none", "holm"};
-};
-template <> struct EnumNames<NeighborhoodMode> {
-    static constexpr std::array<const char*, 2> names{"overlapping", "covering"};
-};
-template <> struct EnumNames<NullModel> {
-    static constexpr std::array<const char*, 2> names{"global", "block"};
-};
-template <> struct EnumNames<MotifStatistic> {
-    static constexpr std::array<const char*, 3> names{"count", "minp", "maxsearch"};
-};
-template <> struct EnumNames<SearchStatistic> {
-    static constexpr std::array<const char*, 3> names{"pexact", "ptail", "z"};
-};
-
 struct AnalysisConfig {
     double radius = 300.0;
     double rho = 0.05;
-    DistanceMetric metric = DistanceMetric::Euclidean;
     int permutations = 1000;
     int seed = 37;
-    NullModel null_model = NullModel::Block;
-    double block_size = 1000.0;
-    double block_origin_x = 0.0;
-    double block_origin_y = 0.0;
+    double block_size = 1000.0;  // side of the square tiles labels are shuffled within
     int threads = 0;
     int max_motifs = 1;
     double alpha = 0.05;
-    MotifStatistic statistic = MotifStatistic::MaxSearch;
-    SearchStatistic search_statistic = SearchStatistic::Z;
-    int min_support = 10;      // smallest observed count a candidate may have
-    int min_types = 0;         // 0 disables the composition filter
-    int min_type_cells = 1;    // cells a type needs to count towards min_types
-    double split_size = 1000.0;  // checkerboard tile side for the selection/test split
-    ErrorControl error_control = ErrorControl::Pointwise;
-    double fdr_failure_probability = -1.0;
-    int fdr_min_discoveries = 0;
-    int fdr_order = 1;
-    std::vector<std::string> frozen_cell_types;
-    NeighborhoodMode neighborhood_mode = NeighborhoodMode::Overlapping;
-    bool freeze_by_abundance = false;
-    int max_freeze_stages = -1;
-    StageErrorControl stage_error_control = StageErrorControl::Holm;
+    int min_support = 10;  // smallest number of separate places a pattern needs
+    int min_types = 0;     // fewest labels a pattern holds; 0 disables the filter
 };
 
 // One motif's evidence within a single sample of a multi-sample run.
@@ -123,8 +66,9 @@ struct MotifTest {
     bool significant = false;
     std::vector<unsigned char> match_mask;
 
-    // Significance search only; p_value holds the raw permutation p-value.
-    double p_value_adjusted = 1.0;  // family-wise adjusted (Westfall-Young)
+    // p_value is the pattern's own permutation rank; p_value_adjusted is the
+    // max-search p-value, which accounts for every labelling's search.
+    double p_value_adjusted = 1.0;
     double lift = 0.0;              // observed / null mean
     int disjoint_support = 0;       // occurrences sharing no cell
 
@@ -147,21 +91,10 @@ struct Result {
     int selected_rank = 1;  // 1-based rank of the reported motif in motif_tests
     int tested_motifs = 1;
     int n_significant_motifs = 0;
-    int candidate_family_size = 0;  // candidates tested by the significance search
-    int universe_size = 0;          // MaxSearch: patterns proposed by any labelling
-    int selection_center_count = 0; // centers that chose the family
-    int test_center_count = 0;      // centers the family was tested on
-    int split_discarded_count = 0;  // centers dropped at tile edges
+    int candidate_family_size = 0;  // patterns the observed tissue proposes
+    int universe_size = 0;          // patterns proposed by any labelling
 
-    double fdr_bound = 1.0;
-    int fdr_threshold = 0;
-    int n_fdr_candidates = 0;
-    bool fdr_certified = false;
-    std::vector<int> fdr_null_order_statistics;
-
-    int permutable_cell_count = 0;
     int null_block_count = 0;
-    int null_shuffle_group_count = 0;
     int null_mixed_group_count = 0;
     int null_exchangeable_cell_count = 0;
 
@@ -169,13 +102,6 @@ struct Result {
     int covered_cell_count = 0;
     int overlapped_cell_count = 0;
     long long neighborhood_membership_count = 0;
-    std::vector<int> candidate_center_ids;
-
-    int freeze_stage = -1;
-    int active_label_count = 0;
-    double stage_p_value_raw = 1.0;
-    double stage_p_value_adjusted = 1.0;
-    bool stage_significant = false;
 
     const MotifTest& selected() const { return motif_tests[selected_rank - 1]; }
 };
@@ -185,21 +111,6 @@ struct Timings {
     double analysis_seconds = 0.0;
     double output_seconds = 0.0;
     double total_seconds = 0.0;
-};
-
-struct FreezeStageResult {
-    int stage_index = 0;
-    std::vector<int> frozen_label_ids;
-    Result result;
-    Timings timings;
-};
-
-struct FreezeSweepResult {
-    std::vector<int> freeze_order;
-    std::vector<int> label_counts;
-    std::vector<FreezeStageResult> stages;
-    double neighbor_build_seconds = 0.0;
-    double observed_histogram_seconds = 0.0;
 };
 
 using Clock = std::chrono::steady_clock;

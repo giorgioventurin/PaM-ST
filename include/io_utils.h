@@ -8,8 +8,6 @@
 #include <string>
 #include <vector>
 
-Dataset load_data(const std::string& path);
-
 // Several tissues analysed together. Cells are concatenated sample by sample,
 // each keeping its own coordinates; cell types are aligned by name.
 Dataset load_samples(const std::vector<std::string>& paths);
@@ -36,18 +34,5 @@ void write_report(std::ostream& os,
                   const Result& result,
                   const AnalysisConfig& config,
                   const Timings& timings);
-
-void write_freeze_sweep_outputs(const std::string& out_dir,
-                                const std::string& input,
-                                const Dataset& data,
-                                const FreezeSweepResult& sweep,
-                                const AnalysisConfig& config);
-
-void write_freeze_sweep_report(std::ostream& os,
-                               const std::string& input,
-                               const Dataset& data,
-                               const FreezeSweepResult& sweep,
-                               const AnalysisConfig& config,
-                               const Timings& timings);
 
 #endif  // PAM_ST_IO_UTILS_H

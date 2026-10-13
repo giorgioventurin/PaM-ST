@@ -23,11 +23,9 @@ add_executable(pam_st
   src/main.cpp
   src/cli.cpp
   src/KDTree.cpp
-  src/VPTreeJS.cpp
   src/utils.cpp
   src/io_utils.cpp
   src/null_model.cpp
-  src/significance.cpp
 )
 
 target_include_directories(pam_st PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

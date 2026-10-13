@@ -3,35 +3,23 @@
 
 #include "structs.h"
 
-#include <array>
-#include <cstdint>
 #include <random>
 #include <vector>
 
-// Nonempty groups of non-frozen cells whose labels are exchanged together.
-// Global: one group in the supplied order. Block: one group per occupied tile,
-// ordered by tile (x, y), each keeping the supplied cell order.
+// The tiles whose labels are exchanged together: one group per occupied tile,
+// ordered by (sample, x, y), each keeping the cells in input order.
 struct LabelShufflePlan {
     std::vector<std::vector<int>> groups;
-    int block_count = 0;              // occupied tiles, including frozen-only tiles
-    int mixed_group_count = 0;        // groups holding at least two distinct labels
-    int exchangeable_cell_count = 0;  // cells in mixed groups
+    int mixed_group_count = 0;        // tiles holding at least two distinct labels
+    int exchangeable_cell_count = 0;  // cells in those tiles
 };
 
-// Half-open tile containing a coordinate: floor((coordinate - origin) / size).
-std::array<std::int64_t, 2> grid_tile(const std::array<double, 2>& coordinate,
-                                      double size, double origin_x, double origin_y);
-
-// Throws for invalid block-grid or analysis parameters.
+// Throws for invalid tile or analysis parameters.
 void validate_null_model_config(const AnalysisConfig& config);
 
-// Tiles are half-open squares with index floor((coordinate - origin) / size).
-// The caller supplies every non-frozen cell, including cells that are not
-// neighbourhood centers. Frozen cell coordinates are validated in block mode.
-LabelShufflePlan make_label_shuffle_plan(
-    const Dataset& data,
-    const std::vector<int>& permutable_cells,
-    const AnalysisConfig& config);
+// Tiles are half-open squares of side block_size with index
+// floor(coordinate / block_size), keyed by sample as well.
+LabelShufflePlan make_label_shuffle_plan(const Dataset& data, const AnalysisConfig& config);
 
 // Shuffles the current labels independently within each group, leaving all
 // other entries fixed. Successive calls continue from the previous shuffle.

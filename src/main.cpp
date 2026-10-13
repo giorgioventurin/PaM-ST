@@ -50,20 +50,6 @@ int main(const int argc, char** argv) {
         };
 
         const auto analysis_start = Clock::now();
-        if (config.freeze_by_abundance) {
-            const FreezeSweepResult sweep = run_freeze_sweep(data, config);
-            timings.analysis_seconds = elapsed_seconds(analysis_start);
-
-            const auto output_start = Clock::now();
-            write_freeze_sweep_outputs(options.output_dir, options.input, data, sweep, config);
-            timings.output_seconds = elapsed_seconds(output_start);
-            timings.total_seconds = elapsed_seconds(program_start);
-            emit([&](std::ostream& os) {
-                write_freeze_sweep_report(os, options.input, data, sweep, config, timings);
-            });
-            return 0;
-        }
-
         const Result result = most_frequent_pattern_test(data, config);
         timings.analysis_seconds = elapsed_seconds(analysis_start);
 
