@@ -50,11 +50,11 @@ int main(const int argc, char** argv) {
         };
 
         const auto analysis_start = Clock::now();
-        const Result result = most_frequent_pattern_test(data, config);
+        const Result result = run_pattern_test(data, config);
         timings.analysis_seconds = elapsed_seconds(analysis_start);
 
         const auto output_start = Clock::now();
-        write_outputs(options.output_dir, data, result, config);
+        write_outputs(options.output_dir, data, result);
         timings.output_seconds = elapsed_seconds(output_start);
         timings.total_seconds = elapsed_seconds(program_start);
         write_summary_csv(options.output_dir, options.input, data, result, config, timings);

@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
-#include <limits>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
@@ -91,28 +90,17 @@ void write_field(std::ostream& os, const char separator, const char* name, const
     os << name << separator << value << '\n';
 }
 
+// The run in "name<separator>value" lines: inputs, parameters, what was found
+// and how long it took. Shared by summary.csv and the text report.
 void write_run_metrics(std::ostream& os,
                        const char separator,
-                       const bool include_pattern,
                        const std::string& input,
                        const Dataset& data,
                        const Result& result,
                        const AnalysisConfig& config,
                        const Timings& timings) {
-    const MotifTest& selected = result.selected();
-    const int cell_count = static_cast<int>(data.labels.size());
-    const double coverage_fraction = cell_count == 0
-        ? 0.0
-        : static_cast<double>(result.covered_cell_count) / cell_count;
-    const double overlap_fraction = result.covered_cell_count == 0
-        ? 0.0
-        : static_cast<double>(result.overlapped_cell_count) / result.covered_cell_count;
-    const double memberships_per_covered_cell = result.covered_cell_count == 0
-        ? 0.0
-        : static_cast<double>(result.neighborhood_membership_count) / result.covered_cell_count;
-
     write_field(os, separator, "input", input);
-    write_field(os, separator, "cells", cell_count);
+    write_field(os, separator, "cells", data.labels.size());
     if (data.sample_count() > 1) {
         std::vector<std::string> sample_cells;
         for (int sample = 0; sample < data.sample_count(); ++sample) {
@@ -124,58 +112,18 @@ void write_run_metrics(std::ostream& os,
         write_field(os, separator, "sample_cells", join_strings(sample_cells));
     }
     write_field(os, separator, "labels", data.label_names.size());
-    write_field(os, separator, "candidate_centers", result.candidate_center_count);
-    write_field(os, separator, "covered_cells", result.covered_cell_count);
-    write_field(os, separator, "uncovered_cells", cell_count - result.covered_cell_count);
-    write_field(os, separator, "coverage_fraction", coverage_fraction);
-    write_field(os, separator, "overlapped_cells", result.overlapped_cell_count);
-    write_field(os, separator, "overlap_fraction", overlap_fraction);
-    write_field(os, separator, "neighborhood_memberships", result.neighborhood_membership_count);
-    write_field(os, separator, "extra_overlap_memberships",
-                result.neighborhood_membership_count - result.covered_cell_count);
-    write_field(os, separator, "memberships_per_covered_cell", memberships_per_covered_cell);
-    {
-        const auto flags = os.flags();
-        const auto precision = os.precision();
-        os << std::defaultfloat << std::setprecision(17);
-        write_field(os, separator, "block_size", config.block_size);
-        os.flags(flags);
-        os.precision(precision);
-    }
-    write_field(os, separator, "null_blocks", result.null_block_count);
-    write_field(os, separator, "null_mixed_groups", result.null_mixed_group_count);
-    write_field(os, separator, "null_exchangeable_cells", result.null_exchangeable_cell_count);
     write_field(os, separator, "radius", config.radius);
     write_field(os, separator, "rho", config.rho);
+    write_field(os, separator, "min_types", config.min_types);
+    write_field(os, separator, "min_support", config.min_support);
+    write_field(os, separator, "block_size", config.block_size);
     write_field(os, separator, "permutations", config.permutations);
     write_field(os, separator, "seed", config.seed);
-    write_field(os, separator, "threads", config.threads);
     write_field(os, separator, "alpha", config.alpha);
-    write_field(os, separator, "max_motifs", config.max_motifs);
-    write_field(os, separator, "candidate_family_size", result.candidate_family_size);
-    write_field(os, separator, "min_support", config.min_support);
-    write_field(os, separator, "min_types", config.min_types);
-    write_field(os, separator, "pattern_universe_size", result.universe_size);
-    write_field(os, separator, "test_centers", result.candidate_center_count);
-    write_field(os, separator, "disjoint_support", result.selected().disjoint_support);
-    write_field(os, separator, "p_value_adjusted", result.selected().p_value_adjusted);
-    write_field(os, separator, "lift", result.selected().lift);
-    write_field(os, separator, "tested_motifs", result.tested_motifs);
-    write_field(os, separator, "n_significant_motifs", result.n_significant_motifs);
-
-    write_field(os, separator, "selected_rank", result.selected_rank);
-    write_field(os, separator, "significant", selected.significant);
-    write_field(os, separator, "observed_frequency", selected.observed);
-    write_field(os, separator, "p_value", selected.p_value);
-    write_field(os, separator, "z_score", selected.z_score);
-    write_field(os, separator, "null_mean", selected.null_mean);
-    write_field(os, separator, "null_sd", selected.null_sd);
-    write_field(os, separator, "n_matches", count_matches(result));
-    if (include_pattern) {
-        os << "pattern" << separator;
-        write_pattern_string(os, data, selected.pattern);
-        os << '\n';
-    }
+    write_field(os, separator, "threads", config.threads);
+    write_field(os, separator, "observed_patterns", result.patterns.size());
+    write_field(os, separator, "universe_size", result.universe_size);
+    write_field(os, separator, "significant_patterns", result.n_significant);
     write_field(os, separator, "load_seconds", timings.load_seconds);
     write_field(os, separator, "analysis_seconds", timings.analysis_seconds);
     write_field(os, separator, "output_seconds", timings.output_seconds);
@@ -290,119 +238,42 @@ void write_summary_csv(const std::string& out_dir,
 
     std::ofstream f = open_output_file(out_dir, "summary.csv");
     f << std::boolalpha << std::setprecision(12) << "metric,value\n";
-    write_run_metrics(f, ',', false, input, data, result, config, timings);
+    write_run_metrics(f, ',', input, data, result, config, timings);
 }
 
-void write_outputs(const std::string& out_dir,
-                   const Dataset& data,
-                   const Result& result,
-                   const AnalysisConfig& config) {
+void write_outputs(const std::string& out_dir, const Dataset& data, const Result& result) {
     if (out_dir.empty()) return;
     std::filesystem::create_directories(out_dir);
-    const MotifTest& selected = result.selected();
-    const bool several_samples = data.sample_count() > 1;
-    if (!several_samples) std::filesystem::remove(std::filesystem::path(out_dir) / "motif_samples.csv");
 
     {
-        std::ofstream f = open_output_file(out_dir, "pattern.csv");
-        f << "label,count\n";
-        for (int i = 0; i < static_cast<int>(selected.pattern.size()); ++i) {
-            f << data.label_names[i] << ',' << selected.pattern[i] << '\n';
-        }
-    }
-
-    {
-        std::ofstream f = open_output_file(out_dir, "matches.csv");
-        // cell_id is the row within the cell's own input file; with several
-        // samples the sample column says which file.
-        f << "cell_id,x,y,label" << (several_samples ? ",sample" : "") << '\n';
-        for (int i = 0; i < static_cast<int>(selected.match_mask.size()); ++i) {
-            if (!selected.match_mask[i]) continue;
-            f << data.local_index(i) << ',' << data.coords[i][0] << ',' << data.coords[i][1]
-              << ',' << data.label_names[data.labels[i]];
-            if (several_samples) f << ',' << data.sample_names[data.sample_of(i)];
-            f << '\n';
-        }
-    }
-
-    {
-        std::ofstream f = open_output_file(out_dir, "null_max.csv");
-        f << "permutation,null_max\n";
-        for (int i = 0; i < static_cast<int>(selected.null_counts.size()); ++i) {
-            f << i + 1 << ',' << selected.null_counts[i] << '\n';
-        }
-    }
-
-    {
-        std::ofstream f = open_output_file(out_dir, "motif_tests.csv");
-        f << "rank,observed_frequency,p_value,z_score,null_mean,null_sd,significant,pattern\n";
-        for (const MotifTest& test : result.motif_tests) {
-            f << test.rank << ','
-              << test.observed << ','
-              << std::setprecision(12) << test.p_value << ','
-              << std::setprecision(12) << test.z_score << ','
-              << std::setprecision(12) << test.null_mean << ','
-              << std::setprecision(12) << test.null_sd << ','
-              << (test.significant ? "true" : "false") << ',';
-            write_pattern_string(f, data, test.pattern);
-            f << '\n';
-        }
-    }
-
-    {
-        std::ofstream f = open_output_file(out_dir, "null_rank_counts.csv");
-        f << "permutation,rank,null_count\n";
-        for (const MotifTest& test : result.motif_tests) {
-            for (int i = 0; i < static_cast<int>(test.null_counts.size()); ++i) {
-                f << i + 1 << ',' << test.rank << ',' << test.null_counts[i] << '\n';
-            }
-        }
-    }
-
-    {
-        std::ofstream f = open_output_file(out_dir, "motif_significance.csv");
-        f << "rank,observed_frequency,disjoint_support,null_mean,null_sd,lift,z_score,"
-             "p_raw,p_adjusted,significant,"
-          << (several_samples ? "replicated_in," : "")
-          << "family_size,mean_cells,mean_composition,"
-          << (several_samples ? "composition_sd," : "") << "pattern\n";
+        // Every pattern of the observed tissue, highest z first.
+        std::ofstream f = open_output_file(out_dir, "patterns.csv");
+        f << "rank,pattern,frequency,recurrence,z_score,p_value,significant,"
+             "mean_cells,mean_composition\n";
         f << std::setprecision(12);
-        for (const MotifTest& test : result.motif_tests) {
-            f << test.rank << ',' << test.observed << ',' << test.disjoint_support
-              << ',' << test.null_mean << ',' << test.null_sd << ',' << test.lift << ',' << test.z_score << ','
-              << test.p_value << ',' << test.p_value_adjusted << ','
-              << (test.significant ? "true" : "false") << ',';
-            if (several_samples) f << test.replicated_in << ',';
-            f << result.candidate_family_size << ',' << test.mean_cells << ',';
-            write_composition_string(f, data, test.mean_composition);
-            f << ',';
-            if (several_samples) {
-                write_composition_string(f, data, test.composition_sd);
-                f << ',';
-            }
-            write_pattern_string(f, data, test.pattern);
+        for (int i = 0; i < static_cast<int>(result.patterns.size()); ++i) {
+            const Pattern& pattern = result.patterns[i];
+            f << i + 1 << ',';
+            write_pattern_string(f, data, pattern.counts);
+            f << ',' << pattern.frequency << ',' << pattern.recurrence << ','
+              << pattern.z_score << ',' << pattern.p_value << ','
+              << (pattern.significant ? "true" : "false") << ',' << pattern.mean_cells << ',';
+            write_composition_string(f, data, pattern.mean_composition);
             f << '\n';
         }
     }
 
-    if (several_samples) {
-        // The same motifs sample by sample. Per-sample p-values are descriptive:
-        // the family-wise guarantee is carried by p_adjusted in
-        // motif_significance.csv, which pools all samples.
-        std::ofstream f = open_output_file(out_dir, "motif_samples.csv");
-        f << "rank,sample,observed_frequency,disjoint_support,null_mean,null_sd,lift,"
-             "p_raw,p_raw_below_alpha,mean_cells,mean_composition\n";
+    {
+        // The centre of every neighbourhood matching a significant pattern.
+        // spot is the row within the sample's own input file, after filtering.
+        std::ofstream f = open_output_file(out_dir, "occurrences.csv");
+        f << "rank,sample,spot,x,y\n";
         f << std::setprecision(12);
-        for (const MotifTest& test : result.motif_tests) {
-            for (int sample = 0; sample < static_cast<int>(test.per_sample.size()); ++sample) {
-                const SampleEvidence& e = test.per_sample[sample];
-                f << test.rank << ',' << data.sample_names[sample] << ',' << e.observed << ','
-                  << e.disjoint_support << ',' << e.null_mean << ',' << e.null_sd << ','
-                  << e.lift << ',' << e.p_value << ','
-                  << (e.p_value <= config.alpha ? "true" : "false") << ','
-                  << e.mean_cells << ',';
-                write_composition_string(f, data, e.mean_composition);
-                f << '\n';
+        for (int i = 0; i < static_cast<int>(result.patterns.size()); ++i) {
+            for (const int spot : result.patterns[i].occurrences) {
+                f << i + 1 << ',' << data.sample_names[data.sample_of(spot)] << ','
+                  << data.local_index(spot) << ',' << data.coords[spot][0] << ','
+                  << data.coords[spot][1] << '\n';
             }
         }
     }
@@ -415,5 +286,5 @@ void write_report(std::ostream& os,
                   const AnalysisConfig& config,
                   const Timings& timings) {
     os << std::boolalpha << std::fixed << std::setprecision(6);
-    write_run_metrics(os, '=', true, input, data, result, config, timings);
+    write_run_metrics(os, '=', input, data, result, config, timings);
 }

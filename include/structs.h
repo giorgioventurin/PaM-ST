@@ -36,74 +36,32 @@ struct AnalysisConfig {
     int seed = 37;
     double block_size = 1000.0;  // side of the square tiles labels are shuffled within
     int threads = 0;
-    int max_motifs = 1;
     double alpha = 0.05;
     int min_support = 10;  // smallest number of separate places a pattern needs
     int min_types = 0;     // fewest labels a pattern holds; 0 disables the filter
 };
 
-// One motif's evidence within a single sample of a multi-sample run.
-struct SampleEvidence {
-    int observed = 0;
-    int disjoint_support = 0;
-    double null_mean = 0.0;
-    double null_sd = 0.0;
-    double lift = 0.0;
-    double p_value = 1.0;  // permutation p-value within this sample, unadjusted
-    double mean_cells = 0.0;             // mean cells inside the matching circles
-    std::vector<double> mean_composition;  // their mean proportions, per label
-};
+// A pattern of the observed tissue, with its test result.
+struct Pattern {
+    std::vector<int> counts;   // the count vector v, indexed by label
+    int frequency = 0;         // f(v): neighbourhoods within rho of v
+    int recurrence = 0;        // R(v): occurrences sharing no spot, taken greedily
+    double z_score = 0.0;      // z of f(v) among its counts on all m+1 labellings
+    double p_value = 1.0;      // share of labellings whose best z reaches it
+    bool significant = false;  // p_value <= alpha
 
-struct MotifTest {
-    int rank = 1;
-    int observed = 0;
-    std::vector<int> pattern;
-    std::vector<int> null_counts;
-    double p_value = 1.0;
-    double null_mean = 0.0;
-    double null_sd = 0.0;
-    double z_score = 0.0;
-    bool significant = false;
-    std::vector<unsigned char> match_mask;
-
-    // p_value is the pattern's own permutation rank; p_value_adjusted is the
-    // max-search p-value, which accounts for every labelling's search.
-    double p_value_adjusted = 1.0;
-    double lift = 0.0;              // observed / null mean
-    int disjoint_support = 0;       // occurrences sharing no cell
-
-    // What the matching circles actually look like: their mean size and their
-    // mean proportions per label, each circle weighted equally so that large
-    // neighbourhoods do not dominate. composition_sd is the spread of the
-    // per-sample means, and stays empty for a single sample.
+    // The matching neighbourhoods as they actually look: their mean size and
+    // mean proportions per label, each neighbourhood weighted equally.
     double mean_cells = 0.0;
     std::vector<double> mean_composition;
-    std::vector<double> composition_sd;
 
-    // Multi-sample runs only: the same evidence split by sample, and the number
-    // of samples whose own p-value reaches alpha (descriptive, not adjusted).
-    std::vector<SampleEvidence> per_sample;
-    int replicated_in = 0;
+    std::vector<int> occurrences;  // centre spots of occ(v); significant patterns only
 };
 
 struct Result {
-    std::vector<MotifTest> motif_tests;
-    int selected_rank = 1;  // 1-based rank of the reported motif in motif_tests
-    int tested_motifs = 1;
-    int n_significant_motifs = 0;
-    int candidate_family_size = 0;  // patterns the observed tissue proposes
-    int universe_size = 0;          // patterns proposed by any labelling
-
-    int null_block_count = 0;
-    int null_mixed_group_count = 0;
-    int null_exchangeable_cell_count = 0;
-
-    int candidate_center_count = 0;
-    int covered_cell_count = 0;
-    int overlapped_cell_count = 0;
-    long long neighborhood_membership_count = 0;
-
-    const MotifTest& selected() const { return motif_tests[selected_rank - 1]; }
+    std::vector<Pattern> patterns;  // P^(0), highest z first
+    int universe_size = 0;          // |U|: patterns proposed by any labelling
+    int n_significant = 0;
 };
 
 struct Timings {

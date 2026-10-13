@@ -40,7 +40,6 @@ void usage(const char* program) {
            "(default: 1000)\n"
         << "  --threads N         Worker threads (default: hardware)\n"
         << "  --alpha A           Significance level (default: 0.05)\n"
-        << "  --max-motifs K      Motifs to report (default: 1)\n"
         << "  --min-support N     Smallest number of separate places a pattern needs "
            "(default: 10)\n"
         << "  --min-types M       Fewest labels a pattern holds (default: off)\n"
@@ -72,7 +71,6 @@ CliOptions parse_args(const int argc, char** argv) {
         else if (key == "--block-size") config.block_size = parse_finite(need_value(key), key);
         else if (key == "--threads") config.threads = std::stoi(need_value(key));
         else if (key == "--alpha") config.alpha = std::stod(need_value(key));
-        else if (key == "--max-motifs") config.max_motifs = std::stoi(need_value(key));
         else if (key == "--min-support") config.min_support = std::stoi(need_value(key));
         else if (key == "--min-types") config.min_types = std::stoi(need_value(key));
         else if (key == "--help" || key == "-h") {
@@ -92,7 +90,6 @@ CliOptions parse_args(const int argc, char** argv) {
     if (config.alpha <= 0.0 || config.alpha >= 1.0) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
     }
-    if (config.max_motifs < 1) throw std::runtime_error("max-motifs must be at least 1");
     if (config.min_support < 1) throw std::runtime_error("min-support must be at least 1");
     if (config.min_types < 0) throw std::runtime_error("min-types must be non-negative");
     if (config.permutations < 1) throw std::runtime_error("permutations must be at least 1");
