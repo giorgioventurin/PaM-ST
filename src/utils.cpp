@@ -675,6 +675,26 @@ NullDraws null_family_counts(const Dataset& data,
 // ---------------------------------------------------------------------------
 // Permutation test
 
+// How many standard deviations a count lies above the mean of a pattern's
+// counts; zero when the counts do not vary, so the score is always finite.
+double z_of(const double count, const double mean, const double sd) {
+    return sd > 0.0 ? (count - mean) / sd : 0.0;
+}
+
+// The z-score of the observed count among all of a pattern's counts - the
+// observed one together with its null counts - with their population mean and
+// standard deviation. This is the score the max-search test ranks labellings
+// by, and every statistic reports it, so the column means one thing.
+double pooled_z_score(const int observed, const std::vector<int>& null_counts) {
+    const double pool = static_cast<double>(null_counts.size()) + 1.0;
+    double sum = observed;
+    for (const int v : null_counts) sum += v;
+    const double mean = sum / pool;
+    double variance = (observed - mean) * (observed - mean);
+    for (const int v : null_counts) variance += (v - mean) * (v - mean);
+    return z_of(observed, mean, std::sqrt(variance / pool));
+}
+
 MotifTest summarize_motif_test(const MotifCandidate& candidate,
                                std::vector<int> null_counts,
                                const int rank,
@@ -701,12 +721,7 @@ MotifTest summarize_motif_test(const MotifCandidate& candidate,
         var += diff * diff;
     }
     test.null_sd = std::sqrt(var / n_permutations);
-    if (test.null_sd > 0.0) {
-        test.z_score = (test.observed - test.null_mean) / test.null_sd;
-    } else if (test.observed != test.null_mean) {
-        const double inf = std::numeric_limits<double>::infinity();
-        test.z_score = test.observed > test.null_mean ? inf : -inf;
-    }
+    test.z_score = pooled_z_score(test.observed, test.null_counts);
     test.significant = test.p_value <= alpha;
     return test;
 }
@@ -1125,23 +1140,29 @@ std::vector<int> search_candidates(const std::vector<int>& histograms,
     return ids;
 }
 
-// How extreme a count is for its pattern, smaller being more extreme. The
-// second entry breaks ties in the discrete rank deterministically, which keeps
-// the statistic a function of the labelling alone.
+// How extreme a count is for its pattern, smaller being more extreme. With the
+// z-score the second entry is unused; with the rank statistics it breaks ties
+// in the discrete rank deterministically, which keeps the statistic a function
+// of the labelling alone.
 using SearchScore = std::pair<double, double>;
 
+// `mean` and `sd` are the population mean and standard deviation of the
+// pattern's counts on all m+1 labellings.
 SearchScore search_score(const int count,
                          const std::vector<int>& sorted_pool,
                          const double mean,
+                         const double sd,
                          const AnalysisConfig& config) {
+    if (config.search_statistic == SearchStatistic::Z) {
+        // The z-score of this labelling's count among the pattern's m+1 counts.
+        return {-z_of(count, mean, sd), 0.0};
+    }
     const int pool = static_cast<int>(sorted_pool.size());
     const int at_least = pool - static_cast<int>(
         std::lower_bound(sorted_pool.begin(), sorted_pool.end(), count) - sorted_pool.begin());
     const double rank_p = static_cast<double>(at_least) / pool;
     const double excess = (count - mean) / std::sqrt(std::max(mean, 1e-9));
     switch (config.search_statistic) {
-        case SearchStatistic::Z:
-            return {-excess, rank_p};
         case SearchStatistic::PTail:
             // Poisson tail, monotone in the excess for a fixed mean.
             return {std::exp(-0.5 * std::max(0.0, excess) * std::max(0.0, excess)), -excess};
@@ -1260,9 +1281,9 @@ Result run_max_search_test(const Dataset& data,
         }
     }
 
-    // Scores: the pooled rank of every labelling's count, pattern by pattern.
+    // Scores: every labelling's count of every pattern, judged against that
+    // pattern's counts on all m+1 labellings.
     std::vector<SearchScore> score(static_cast<std::size_t>(family.size) * pool);
-    std::vector<double> pattern_mean(family.size, 0.0);
     {
         std::vector<int> sorted(pool);
         for (int c = 0; c < family.size; ++c) {
@@ -1271,17 +1292,21 @@ Result run_max_search_test(const Dataset& data,
             std::sort(sorted.begin(), sorted.end());
             const double mean =
                 static_cast<double>(std::accumulate(row, row + pool, 0LL)) / pool;
-            pattern_mean[c] = mean;
+            double variance = 0.0;
+            for (int j = 0; j < pool; ++j) variance += (row[j] - mean) * (row[j] - mean);
+            const double sd = std::sqrt(variance / pool);
             for (int j = 0; j < pool; ++j) {
                 score[static_cast<std::size_t>(c) * pool + j] =
-                    search_score(row[j], sorted, mean, config);
+                    search_score(row[j], sorted, mean, sd, config);
             }
         }
     }
 
     // Each labelling keeps only its best candidate; those m+1 values are the
-    // reference the observed patterns are judged against.
-    std::vector<SearchScore> best(pool, SearchScore{2.0, 0.0});
+    // reference the observed patterns are judged against. A labelling with no
+    // candidates has no best score and never counts against an observed one.
+    const double none = std::numeric_limits<double>::infinity();
+    std::vector<SearchScore> best(pool, SearchScore{none, none});
     for (int j = 0; j < pool; ++j) {
         for (const int c : proposed[j]) {
             const SearchScore& s = score[static_cast<std::size_t>(c) * pool + j];
@@ -1349,12 +1374,7 @@ Result run_max_search_test(const Dataset& data,
         test.null_sd = std::sqrt(variance / m);
         test.lift = mean > 0.0 ? test.observed / mean
                                : (test.observed > 0 ? std::numeric_limits<double>::infinity() : 1.0);
-        if (test.null_sd > 0.0) {
-            test.z_score = (test.observed - test.null_mean) / test.null_sd;
-        } else if (test.observed != test.null_mean) {
-            const double inf = std::numeric_limits<double>::infinity();
-            test.z_score = test.observed > test.null_mean ? inf : -inf;
-        }
+        test.z_score = pooled_z_score(test.observed, test.null_counts);
         test.significant = test.p_value_adjusted <= config.alpha;
         if (test.significant) ++result.n_significant_motifs;
 
@@ -1591,12 +1611,7 @@ Result run_significance_test(const Dataset& data,
         test.null_mean = scores.null_mean[c];
         test.null_sd = scores.null_sd[c];
         test.lift = scores.lift[c];
-        if (test.null_sd > 0.0) {
-            test.z_score = (test.observed - test.null_mean) / test.null_sd;
-        } else if (test.observed != test.null_mean) {
-            const double inf = std::numeric_limits<double>::infinity();
-            test.z_score = test.observed > test.null_mean ? inf : -inf;
-        }
+        test.z_score = pooled_z_score(test.observed, test.null_counts);
         test.significant = test.p_value_adjusted <= config.alpha;
         if (test.significant) ++result.n_significant_motifs;
         const std::vector<unsigned char>& matched = reported_matches[rank];
