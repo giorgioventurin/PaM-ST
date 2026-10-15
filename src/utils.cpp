@@ -158,17 +158,18 @@ CompositionClasses composition_classes(const std::vector<int>& histograms,
     return out;
 }
 
-// Each row divided by its Euclidean norm: the normalised count vectors c~.
+// Each row divided by its L1 norm, the number of spots it counts: the
+// normalised count vectors c~, which hold the proportion of each label.
+// Dividing rather than multiplying by the inverse keeps proportional rows
+// bit-identical, since each proportion is then the correctly rounded quotient.
 std::vector<double> normalized_rows(const std::vector<int>& rows, const int n, const int k) {
     std::vector<double> out(static_cast<std::size_t>(n) * k, 0.0);
     for (int i = 0; i < n; ++i) {
         const int* row = row_of(rows, i, k);
-        double norm2 = 0.0;
-        for (int d = 0; d < k; ++d) norm2 += static_cast<double>(row[d]) * row[d];
-        if (norm2 == 0.0) continue;
-        const double inv_norm = 1.0 / std::sqrt(norm2);
+        const double total = std::accumulate(row, row + k, 0.0);
+        if (total == 0.0) continue;
         double* dst = out.data() + static_cast<std::size_t>(i) * k;
-        for (int d = 0; d < k; ++d) dst[d] = row[d] * inv_norm;
+        for (int d = 0; d < k; ++d) dst[d] = row[d] / total;
     }
     return out;
 }
@@ -201,7 +202,7 @@ public:
         points_ = normalized_rows(classes_.rows, m, n_labels);
         tree_ = std::make_unique<KDTreeND>(points_, n_labels, classes_.multiplicities);
         if (rho >= std::sqrt(2.0)) {
-            frequency_.assign(m, n);  // no two normalised count vectors are farther apart
+            frequency_.assign(m, n);  // no two proportion vectors are farther apart
         } else {
             frequency_ = tree_->weighted_neighbor_counts(rho * rho, threads);
         }
