@@ -40,10 +40,8 @@ void usage(const char* program) {
            "(default: 1000)\n"
         << "  --threads N         Worker threads (default: hardware)\n"
         << "  --alpha A           Significance level (default: 0.05)\n"
-        << "  --min-labels T      Support threshold: fewest labels a pattern holds "
-           "(default: 0)\n"
-        << "  --min-recurrence K  Recurrence threshold: fewest separate places a "
-           "pattern recurs in (default: 10)\n"
+        << "  --min-recurrence K  Fewest separate places a count vector must recur in "
+           "to be a pattern (default: 10; 1 keeps every count vector)\n"
         << "  --output-dir DIR    Write the result CSVs\n"
         << "  --output-file FILE  Write the text report to FILE "
            "(default: DIR/report.txt when --output-dir is set)\n";
@@ -73,7 +71,6 @@ CliOptions parse_args(const int argc, char** argv) {
         else if (key == "--threads") config.threads = std::stoi(need_value(key));
         else if (key == "--alpha") config.alpha = std::stod(need_value(key));
         else if (key == "--min-recurrence") config.min_recurrence = std::stoi(need_value(key));
-        else if (key == "--min-labels") config.min_labels = std::stoi(need_value(key));
         else if (key == "--help" || key == "-h") {
             usage(argv[0]);
             std::exit(0);
@@ -92,7 +89,6 @@ CliOptions parse_args(const int argc, char** argv) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
     }
     if (config.min_recurrence < 1) throw std::runtime_error("min-recurrence must be at least 1");
-    if (config.min_labels < 0) throw std::runtime_error("min-labels must be non-negative");
     if (config.permutations < 1) throw std::runtime_error("permutations must be at least 1");
     return options;
 }

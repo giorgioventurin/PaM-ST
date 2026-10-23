@@ -38,15 +38,14 @@ struct AnalysisConfig {
     int threads = 0;
     double alpha = 0.05;
     int min_recurrence = 10;  // kappa: fewest separate places a pattern recurs in
-    int min_labels = 0;       // tau: fewest labels a pattern holds
 };
 
 // A pattern of the observed tissue, with its test result.
 struct Pattern {
     std::vector<int> counts;   // the count vector v, indexed by label
     int frequency = 0;         // f(v): neighbourhoods within rho of v
-    int recurrence = 0;        // R(v): occurrences sharing no spot, taken greedily
-    double z_score = 0.0;      // z of f(v) among its counts on all m+1 labellings
+    int recurrence = 0;        // R(v): occurrences sharing no spot, min-degree greedy
+    double z_score = 0.0;      // z of R(v) among its recurrences on all m+1 labellings
     double p_value = 1.0;      // share of labellings whose best z reaches it
     bool significant = false;  // p_value <= alpha
 
@@ -60,7 +59,7 @@ struct Pattern {
 
 struct Result {
     std::vector<Pattern> patterns;  // P^(0), highest z first
-    int universe_size = 0;          // |U|: patterns proposed by any labelling
+    int universe_size = 0;          // |U|: patterns of any labelling, up to scale
     int n_significant = 0;
 };
 

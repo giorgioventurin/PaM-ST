@@ -31,7 +31,7 @@ void parallel_for(const int n, const int threads, Fn fn) {
 std::string trim(std::string s);
 std::string lower_ascii(std::string s);
 
-// The pattern test of docs/pattern_test.tex on the given tissues.
+// The pattern test of docs/pam-st.tex on the given tissues.
 Result run_pattern_test(const Dataset& data, const AnalysisConfig& config);
 
 #endif  // PAM_ST_UTILS_H
