@@ -61,6 +61,16 @@ struct Result {
     std::vector<Pattern> patterns;  // P^(0), highest z first
     int universe_size = 0;          // |U|: patterns of any labelling, up to scale
     int n_significant = 0;
+
+    // Every labelling j = 0..m, the observed one first: how many patterns it
+    // has, |P^(j)|, and its best score T^(j), -infinity when it has none.
+    std::vector<int> labelling_patterns;
+    std::vector<double> labelling_best;
+
+    // Seconds spent in each pass over the m+1 labellings.
+    double universe_seconds = 0.0;
+    double recurrence_seconds = 0.0;
+    double score_seconds = 0.0;
 };
 
 struct Timings {

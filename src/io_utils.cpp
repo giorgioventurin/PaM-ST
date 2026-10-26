@@ -125,6 +125,9 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "significant_patterns", result.n_significant);
     write_field(os, separator, "load_seconds", timings.load_seconds);
     write_field(os, separator, "analysis_seconds", timings.analysis_seconds);
+    write_field(os, separator, "universe_seconds", result.universe_seconds);
+    write_field(os, separator, "recurrence_seconds", result.recurrence_seconds);
+    write_field(os, separator, "score_seconds", result.score_seconds);
     write_field(os, separator, "output_seconds", timings.output_seconds);
     write_field(os, separator, "total_seconds", timings.total_seconds);
 }
@@ -259,6 +262,17 @@ void write_outputs(const std::string& out_dir, const Dataset& data, const Result
               << (pattern.significant ? "true" : "false") << ',' << pattern.mean_cells << ',';
             write_composition_string(f, data, pattern.mean_composition);
             f << '\n';
+        }
+    }
+
+    {
+        // Every labelling, the observed one (0) first: how many patterns it
+        // has and its best score T, against which observed scores are judged.
+        std::ofstream f = open_output_file(out_dir, "labellings.csv");
+        f << "labelling,patterns,best_z\n";
+        f << std::setprecision(12);
+        for (int j = 0; j < static_cast<int>(result.labelling_best.size()); ++j) {
+            f << j << ',' << result.labelling_patterns[j] << ',' << result.labelling_best[j] << '\n';
         }
     }
 

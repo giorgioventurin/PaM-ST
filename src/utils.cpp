@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <numeric>
 #include <random>
@@ -551,6 +552,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     // vector recurs at least once on its own labelling, so kappa = 1 needs no
     // recurrences here.
     PatternUniverse universe;
+    auto pass_start = Clock::now();
     for_each_labelling("patterns", [&](int, const std::vector<int>& histograms) {
         if (kappa == 1) {
             const CompositionClasses classes = composition_classes(histograms, n_cells, n_labels);
@@ -562,6 +564,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
         const CompositionIndex index(histograms, n_cells, n_labels, config.rho);
         for (const auto& [cls, r] : patterns_of(index)) universe.intern(index.pattern(cls), n_labels);
     });
+    const double universe_seconds = elapsed_seconds(pass_start);
     const int n_universe = universe.size;
     std::cerr << "Universe: " << n_universe << " patterns\n";
     std::vector<std::vector<int>> keys(n_universe);
@@ -577,6 +580,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     // Pass 2: the recurrence of every pattern of U on every labelling, kept as
     // sums for the mean and standard deviation over the m+1 labellings.
     std::vector<long long> sum(n_universe, 0), sum_sq(n_universe, 0);
+    pass_start = Clock::now();
     for_each_labelling("recurrences", [&](int, const std::vector<int>& histograms) {
         const CompositionIndex index(histograms, n_cells, n_labels, config.rho);
         parallel_for(n_universe, config.threads, [&](const int lo, const int hi) {
@@ -588,6 +592,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
             }
         });
     });
+    const double recurrence_seconds = elapsed_seconds(pass_start);
     auto score = [&](const int c, const long long r) {
         return Score{pool * r - sum[c],
                      static_cast<__int128>(pool) * sum_sq[c] - static_cast<__int128>(sum[c]) * sum[c]};
@@ -595,17 +600,20 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
 
     // Pass 3: each labelling's best score over its own patterns, and the
     // observed patterns with their scores.
-    // best[j] is T^(j); a labelling without patterns, which only an empty
-    // tissue has, would have T = -infinity and never count.
+    // best[j] is T^(j); a labelling without patterns has T = -infinity and
+    // never counts.
     std::vector<Score> best(pool);
     std::vector<unsigned char> has_best(pool, 0);
+    std::vector<int> n_patterns(pool, 0);
     std::vector<Pattern> observed;
     std::vector<Score> observed_score;
     std::vector<int> observed_id;
+    pass_start = Clock::now();
     for_each_labelling("scores", [&](const int j, const std::vector<int>& histograms) {
         const CompositionIndex index(histograms, n_cells, n_labels, config.rho);
         const std::vector<std::pair<int, int>> patterns = patterns_of(index);
         const int k = static_cast<int>(patterns.size());
+        n_patterns[j] = k;
         std::vector<int> id(k);
         std::vector<Score> z(k);
         for (int a = 0; a < k; ++a) {
@@ -632,6 +640,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
             }
         });
     });
+    const double score_seconds = elapsed_seconds(pass_start);
     int at_ceiling = 0;
     for (int j = 0; j < pool; ++j) {
         // z = sqrt(m) exactly when num^2 == m spread.
@@ -646,6 +655,14 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     // p-values, then the observed patterns highest z first.
     Result result;
     result.universe_size = n_universe;
+    result.labelling_patterns = n_patterns;
+    for (int j = 0; j < pool; ++j) {
+        result.labelling_best.push_back(has_best[j] ? best[j].value()
+                                                    : -std::numeric_limits<double>::infinity());
+    }
+    result.universe_seconds = universe_seconds;
+    result.recurrence_seconds = recurrence_seconds;
+    result.score_seconds = score_seconds;
     std::vector<int> order(observed.size());
     std::iota(order.begin(), order.end(), 0);
     for (int a = 0; a < static_cast<int>(observed.size()); ++a) {

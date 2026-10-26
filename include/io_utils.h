@@ -23,8 +23,9 @@ void write_summary_csv(const std::string& out_dir,
                        const AnalysisConfig& config,
                        const Timings& timings);
 
-// patterns.csv (every observed pattern) and occurrences.csv (the matching
-// neighbourhoods of the significant ones).
+// patterns.csv (every observed pattern), labellings.csv (the size and best
+// score of every labelling) and occurrences.csv (the matching neighbourhoods
+// of the significant ones).
 void write_outputs(const std::string& out_dir, const Dataset& data, const Result& result);
 
 void write_report(std::ostream& os,
