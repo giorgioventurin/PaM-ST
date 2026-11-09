@@ -37,15 +37,15 @@ struct AnalysisConfig {
     double tile_size = 1000.0;  // L: side of the square tiles labels are shuffled within
     int threads = 0;
     double alpha = 0.05;
-    int min_recurrence = 10;  // kappa: fewest separate places a pattern recurs in
+    int min_frequency = 10;  // kappa: fewest neighbourhoods a pattern occurs in
+    int min_labels = 0;      // tau: fewest labels a pattern holds
 };
 
 // A pattern of the observed tissue, with its test result.
 struct Pattern {
     std::vector<int> counts;   // the count vector v, indexed by label
     int frequency = 0;         // f(v): neighbourhoods within rho of v
-    int recurrence = 0;        // R(v): occurrences sharing no spot, min-degree greedy
-    double z_score = 0.0;      // z of R(v) among its recurrences on all m+1 labellings
+    double z_score = 0.0;      // z of f(v) among its frequencies on all m+1 labellings
     double p_value = 1.0;      // share of labellings whose best z reaches it
     bool significant = false;  // p_value <= alpha
 
@@ -69,7 +69,7 @@ struct Result {
 
     // Seconds spent in each pass over the m+1 labellings.
     double universe_seconds = 0.0;
-    double recurrence_seconds = 0.0;
+    double frequency_seconds = 0.0;
     double score_seconds = 0.0;
 };
 

@@ -8,9 +8,9 @@ Writes RUN_DIR/plots/statistics.png with six panels:
 * the best score T of every shuffled labelling, the null the observed
   scores are judged against, with the observed labelling's own T;
 * the p-values, with how many sit at the smallest possible, 1/(m+1);
-* z-score against recurrence;
-* recurrence against frequency: how many of a pattern's occurrences survive
-  when they must not share a cell;
+* z-score against frequency;
+* z-score against the number of labels a pattern holds, the support that
+  --min-labels thresholds;
 * how many patterns each labelling has, observed against shuffled.
 
 The critical value is the score a pattern must exceed to be significant, and
@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pam_results import (INK, MUTED, NOT_SIGNIFICANT, NULL, SIGNIFICANT, load_run, output_path,
-                         use_style)
+                         parse_counts, use_style)
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,8 +73,8 @@ def main() -> None:
     z = pats["z_score"].to_numpy(float)
     p = pats["p_value"].to_numpy(float)
     sig = pats["significant"].to_numpy(bool)
-    rec = pats["recurrence"].to_numpy(float)
     freq = pats["frequency"].to_numpy(float)
+    support = pats["pattern"].map(lambda text: len(parse_counts(text))).to_numpy()
     ceiling, critical = run.ceiling, run.critical_value()
     pool = run.m + 1
     alpha = run.number("alpha")
@@ -127,27 +127,25 @@ def main() -> None:
     c.set_ylabel("observed patterns")
     c.set_title("p-values")
 
-    # Score against recurrence.
-    scatter_by_significance(d, rec, z, sig)
-    d.axhline(ceiling, color=INK, lw=1, ls="--")
-    if np.isfinite(critical):
-        d.axhline(critical, color=INK, lw=1, ls=":")
+    # Score against frequency.
+    scatter_by_significance(d, freq, z, sig)
     d.set_xscale("log")
-    d.set_xlabel("recurrence R")
+    d.set_xlabel("frequency f")
     d.set_ylabel("z-score")
-    d.set_title("Score against recurrence")
+    d.set_title("Score against frequency")
     d.legend(loc="lower right", fontsize=8)
 
-    # Recurrence against frequency.
-    scatter_by_significance(e, freq, rec, sig)
-    top = max(freq.max(), rec.max()) * 1.2
-    e.plot([1, top], [1, top], color=INK, lw=1, ls="--")
-    e.text(top, top, "R = f ", ha="right", va="bottom", fontsize=8)
-    e.set_xscale("log")
-    e.set_yscale("log")
-    e.set_xlabel("frequency f (all occurrences)")
-    e.set_ylabel("recurrence R (sharing no cell)")
-    e.set_title("How many occurrences stay apart")
+    # Score against the number of labels, jittered so the columns show their mass.
+    jitter = np.random.default_rng(0).uniform(-0.3, 0.3, len(support))
+    scatter_by_significance(e, support + jitter, z, sig)
+    e.set_xticks(np.unique(support))
+    e.set_xlabel("labels in the pattern |supp(v)|")
+    e.set_ylabel("z-score")
+    e.set_title("Score against the number of labels")
+    for ax in (d, e):
+        ax.axhline(ceiling, color=INK, lw=1, ls="--")
+        if np.isfinite(critical):
+            ax.axhline(critical, color=INK, lw=1, ls=":")
 
     # Patterns per labelling.
     if lab is None:
@@ -162,7 +160,7 @@ def main() -> None:
         f.set_xlabel("patterns |P⁽ʲ⁾| in a labelling")
         f.set_ylabel("labellings")
         f.legend(loc="upper left", fontsize=8)
-    f.set_title("How many patterns recur")
+    f.set_title("Patterns per labelling")
 
     fig.suptitle(f"PaM-ST statistics: {run.name}\n{run.parameters()}   ·   "
                  f"{len(pats)} observed patterns, {sig.sum()} significant, "

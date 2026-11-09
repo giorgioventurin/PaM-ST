@@ -7,7 +7,7 @@ Writes RUN_DIR/plots/compositions.png: one row per pattern, the highest
 scores first, showing the mean share of each cell type in its matching
 neighbourhoods. Rows are grouped by their most common cell type, so families
 of near-identical patterns (the same clump at different sizes, say) sit
-together. Beside the heatmap: each pattern's recurrence and z-score.
+together. Beside the heatmap: each pattern's frequency and z-score.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def main() -> None:
 
     height = 1.8 + 0.24 * len(rows)
     width = 4.5 + 0.42 * len(columns)
-    fig, (heat, rec_ax, z_ax) = plt.subplots(
+    fig, (heat, freq_ax, z_ax) = plt.subplots(
         1, 3, figsize=(width + 3.6, height), sharey=True, layout="constrained",
         gridspec_kw={"width_ratios": [0.42 * len(columns), 1.4, 1.4]})
 
@@ -79,10 +79,10 @@ def main() -> None:
 
     y = np.arange(len(rows))
     colours = np.where(rows["significant"], SIGNIFICANT, NOT_SIGNIFICANT)
-    rec_ax.barh(y, rows["recurrence"], color=colours, height=0.7)
-    rec_ax.set_xscale("log")
-    rec_ax.set_title("recurrence R", fontweight="normal")
-    rec_ax.tick_params(axis="y", length=0)
+    freq_ax.barh(y, rows["frequency"], color=colours, height=0.7)
+    freq_ax.set_xscale("log")
+    freq_ax.set_title("frequency f", fontweight="normal")
+    freq_ax.tick_params(axis="y", length=0)
     z_ax.scatter(rows["z_score"], y, s=14, c=colours)
     z_ax.axvline(run.ceiling, color=INK, lw=1, ls="--")
     critical = run.critical_value()
@@ -91,7 +91,7 @@ def main() -> None:
     z_ax.set_title("z-score", fontweight="normal")
     z_ax.text(1, -0.02, "-- ceiling √m   ··· critical value", transform=z_ax.transAxes,
               ha="right", va="top", fontsize=7, color=MUTED)
-    for ax in (rec_ax, z_ax):
+    for ax in (freq_ax, z_ax):
         ax.grid(True, axis="x", lw=0.5)
     heat.set_ylim(len(rows) - 0.5, -0.5)
 

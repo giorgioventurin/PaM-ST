@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -131,6 +130,11 @@ std::vector<int> composition_key(const int* row, const int k) {
     return key;
 }
 
+// The number of labels a count vector holds, its support |supp(c)|.
+int support(const int* row, const int k) {
+    return static_cast<int>(std::count_if(row, row + k, [](const int v) { return v > 0; }));
+}
+
 // Distinct compositions among n count vectors.
 struct CompositionClasses {
     std::vector<int> rows;            // first count vector seen for each class, flattened
@@ -175,8 +179,8 @@ std::vector<double> normalized_rows(const std::vector<int>& rows, const int n, c
     return out;
 }
 
-// The compositions of one labelling, indexed so that the occurrences of any
-// count vector come back directly. Every row of a class has the same
+// The compositions of one labelling, indexed so that the occurrences and the
+// frequency of any count vector come back directly. Every row of a class has the same
 // normalised vector, so a range query over the classes answers it for all
 // their rows at once.
 class CompositionIndex {
@@ -225,6 +229,19 @@ public:
         if (it != class_of_key_.end()) rows_of_class(it->second, out);
     }
 
+    // f(v): how many rows lie within rho of v, with v given as for occurrences().
+    int frequency(const std::vector<int>& key, const double* point) const {
+        if (rho_ > 0.0) return tree_->weighted_count_within(point, rho_ * rho_);
+        const auto it = class_of_key_.find(key);
+        return it == class_of_key_.end() ? 0 : classes_.multiplicities[it->second];
+    }
+
+    // f for each of this labelling's own compositions.
+    std::vector<int> class_frequencies(const int threads) const {
+        if (rho_ == 0.0) return classes_.multiplicities;
+        return tree_->weighted_neighbor_counts(rho_ * rho_, threads);
+    }
+
     // occ(v) for v one of this labelling's own compositions.
     void class_occurrences(const int cls, std::vector<int>& hits, std::vector<int>& out) const {
         out.clear();
@@ -258,110 +275,8 @@ private:
     std::unique_ptr<KDTreeND> tree_;
 };
 
-// Working space for the greedy recurrence, one per thread. The per-spot
-// arrays are left zeroed after every call.
-struct GreedyScratch {
-    explicit GreedyScratch(const int n_cells) : count(n_cells, 0), start(n_cells, 0) {}
-    std::vector<int> count, start;        // per spot
-    std::vector<int> touched, members;    // spots met, and who holds each
-    std::vector<int> mark, degree, removed;
-    std::vector<std::size_t> adj_start;
-    std::vector<int> adj;
-    std::vector<unsigned char> alive;
-    std::vector<std::pair<int, int>> heap;
-    std::vector<int> rows, hits;          // occurrences and class hits
-};
-
-// The greedy recurrence of Algorithm 1. The conflict graph joins two
-// occurrences whose neighbourhoods share a spot; the greedy repeatedly takes a
-// vertex of minimum degree in the remaining graph and deletes it with its
-// neighbours, degrees being recomputed as vertices go. Ties go to the lowest
-// index, a fixed rule, so the value depends on the occurrences alone.
-int greedy_recurrence(const std::vector<int>& occ, const Neighbors& neighbors, GreedyScratch& w) {
-    const int f = static_cast<int>(occ.size());
-    if (f <= 1) return f;
-
-    // For every spot, the occurrences whose neighbourhood holds it.
-    w.touched.clear();
-    for (const int i : occ) {
-        for (const int s : neighbors[i]) {
-            if (w.count[s]++ == 0) w.touched.push_back(s);
-        }
-    }
-    int total = 0;
-    for (const int s : w.touched) {
-        w.start[s] = total;
-        total += w.count[s];
-        w.count[s] = w.start[s];  // becomes the fill cursor, then the end
-    }
-    w.members.resize(total);
-    for (int a = 0; a < f; ++a) {
-        for (const int s : neighbors[occ[a]]) w.members[w.count[s]++] = a;
-    }
-
-    // The conflict graph, as adjacency lists.
-    w.adj_start.assign(f + 1, 0);
-    w.adj.clear();
-    w.mark.assign(f, -1);
-    for (int a = 0; a < f; ++a) {
-        w.mark[a] = a;
-        for (const int s : neighbors[occ[a]]) {
-            for (int k = w.start[s]; k < w.count[s]; ++k) {
-                const int b = w.members[k];
-                if (w.mark[b] != a) {
-                    w.mark[b] = a;
-                    w.adj.push_back(b);
-                }
-            }
-        }
-        w.adj_start[a + 1] = w.adj.size();
-    }
-    for (const int s : w.touched) w.count[s] = 0;
-
-    // Minimum-degree greedy, with a lazy heap: a popped entry whose degree is
-    // out of date is skipped, and every decrement pushes a fresh one.
-    w.degree.resize(f);
-    w.alive.assign(f, 1);
-    w.heap.clear();
-    for (int a = 0; a < f; ++a) {
-        w.degree[a] = static_cast<int>(w.adj_start[a + 1] - w.adj_start[a]);
-        w.heap.emplace_back(w.degree[a], a);
-    }
-    const auto later = std::greater<std::pair<int, int>>();
-    std::make_heap(w.heap.begin(), w.heap.end(), later);
-    int kept = 0;
-    while (!w.heap.empty()) {
-        std::pop_heap(w.heap.begin(), w.heap.end(), later);
-        const auto [d, u] = w.heap.back();
-        w.heap.pop_back();
-        if (!w.alive[u] || d != w.degree[u]) continue;
-        ++kept;
-        // Delete u and its neighbours, then lower the degrees around them.
-        w.removed.clear();
-        w.alive[u] = 0;
-        w.removed.push_back(u);
-        for (std::size_t k = w.adj_start[u]; k < w.adj_start[u + 1]; ++k) {
-            const int b = w.adj[k];
-            if (w.alive[b]) {
-                w.alive[b] = 0;
-                w.removed.push_back(b);
-            }
-        }
-        for (const int x : w.removed) {
-            for (std::size_t k = w.adj_start[x]; k < w.adj_start[x + 1]; ++k) {
-                const int y = w.adj[k];
-                if (!w.alive[y]) continue;
-                --w.degree[y];
-                w.heap.emplace_back(w.degree[y], y);
-                std::push_heap(w.heap.begin(), w.heap.end(), later);
-            }
-        }
-    }
-    return kept;
-}
-
 // Every count vector proposed by any labelling, keyed by composition so that
-// proportional vectors, which share occurrences and recurrence, are one entry:
+// proportional vectors, which share occurrences and frequency, are one entry:
 // the universe U.
 struct PatternUniverse {
     std::unordered_map<std::vector<int>, int, VectorHash> id_of;
@@ -383,16 +298,21 @@ struct PatternUniverse {
     }
 };
 
+// 128-bit integers, a GCC and Clang extension; naming them once under
+// __extension__ keeps -Wpedantic from warning at every use.
+__extension__ typedef __int128 Int128;
+__extension__ typedef unsigned __int128 UInt128;
+
 // The score z of a pattern on one labelling, how many standard deviations its
-// recurrence R lies above the mean of its m+1 recurrences, kept exactly as
-// (pool R - S1) / sqrt(pool S2 - S1^2), with S1 and S2 the sums of the
-// recurrences and of their squares. It is zero when they do not vary.
+// frequency f lies above the mean of its m+1 frequencies, kept exactly as
+// (pool f - S1) / sqrt(pool S2 - S1^2), with S1 and S2 the sums of the
+// frequencies and of their squares. It is zero when they do not vary.
 // Exactness matters because ties are common: a pattern seen on one labelling
-// alone scores sqrt(m) whatever its recurrence, and m is the largest a score
+// alone scores sqrt(m) whatever its frequency, and m is the largest a score
 // can be, so rounding would decide p-values.
 struct Score {
-    long long num = 0;    // pool R - S1
-    __int128 spread = 0;  // pool S2 - S1^2
+    long long num = 0;    // pool f - S1
+    Int128 spread = 0;    // pool S2 - S1^2
 
     int sign() const { return spread == 0 || num == 0 ? 0 : (num > 0 ? 1 : -1); }
     double value() const {
@@ -400,13 +320,13 @@ struct Score {
     }
 };
 
-using Wide = std::pair<unsigned __int128, unsigned __int128>;  // high and low halves
+using Wide = std::pair<UInt128, UInt128>;  // high and low halves
 
-Wide multiply_wide(const unsigned __int128 a, const unsigned __int128 b) {
-    const unsigned __int128 mask = ~std::uint64_t{0};
-    const unsigned __int128 a0 = a & mask, a1 = a >> 64, b0 = b & mask, b1 = b >> 64;
-    const unsigned __int128 p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
-    const unsigned __int128 mid = (p00 >> 64) + (p01 & mask) + (p10 & mask);
+Wide multiply_wide(const UInt128 a, const UInt128 b) {
+    const UInt128 mask = ~std::uint64_t{0};
+    const UInt128 a0 = a & mask, a1 = a >> 64, b0 = b & mask, b1 = b >> 64;
+    const UInt128 p00 = a0 * b0, p01 = a0 * b1, p10 = a1 * b0, p11 = a1 * b1;
+    const UInt128 mid = (p00 >> 64) + (p01 & mask) + (p10 & mask);
     return {p11 + (p01 >> 64) + (p10 >> 64) + (mid >> 64), (p00 & mask) | (mid << 64)};
 }
 
@@ -417,11 +337,11 @@ bool at_least(const Score& a, const Score& b) {
     if (sa != sb) return sa > sb;
     if (sa == 0) return true;
     const auto square = [](const long long x) {
-        const auto u = static_cast<unsigned __int128>(x < 0 ? -x : x);
+        const auto u = static_cast<UInt128>(x < 0 ? -x : x);
         return u * u;
     };
-    const Wide lhs = multiply_wide(square(a.num), static_cast<unsigned __int128>(b.spread));
-    const Wide rhs = multiply_wide(square(b.num), static_cast<unsigned __int128>(a.spread));
+    const Wide lhs = multiply_wide(square(a.num), static_cast<UInt128>(b.spread));
+    const Wide rhs = multiply_wide(square(b.num), static_cast<UInt128>(a.spread));
     return sa > 0 ? lhs >= rhs : lhs <= rhs;
 }
 
@@ -454,7 +374,8 @@ void describe_occurrences(const std::vector<int>& histograms,
 void validate_analysis_config(const AnalysisConfig& config) {
     validate_null_model_config(config);
     if (config.rho < 0.0) throw std::runtime_error("rho must be non-negative");
-    if (config.min_recurrence < 1) throw std::runtime_error("min-recurrence must be at least 1");
+    if (config.min_frequency < 1) throw std::runtime_error("min-frequency must be at least 1");
+    if (config.min_labels < 0) throw std::runtime_error("min-labels must be non-negative");
     if (config.permutations < 1) throw std::runtime_error("permutations must be at least 1");
     if (config.alpha <= 0.0 || config.alpha >= 1.0) {
         throw std::runtime_error("alpha must be greater than 0 and less than 1");
@@ -488,10 +409,10 @@ std::string lower_ascii(std::string s) {
 }
 
 // The test of docs/pam-st.tex. The patterns of a labelling are its count
-// vectors that recur at least kappa times there (kappa = 1 keeps every count
-// vector), the statistic is the greedy recurrence, and the p-value of an
-// observed pattern is the share of the m+1 labellings whose best score reaches
-// its own.
+// vectors that hold at least tau labels and occur at least kappa times there
+// (tau = 0 and kappa = 1 keep every count vector), the statistic is the
+// frequency, and the p-value of an observed pattern is the share of the m+1
+// labellings whose best score reaches its own.
 // The labellings are replayed in three passes from one seeded stream, so that
 // only per-pattern sums are kept: memory grows with |U|, not with |U| (m+1).
 Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
@@ -508,7 +429,8 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     const int n_labels = static_cast<int>(data.label_names.size());
     const int m = config.permutations;
     const int pool = m + 1;
-    const int kappa = config.min_recurrence;
+    const int kappa = config.min_frequency;
+    const int tau = config.min_labels;
     const int step = std::max(1, pool / 20);  // progress lines, whatever the budget
     const Neighbors neighbors = build_neighbors(data, config.radius, config.threads);
 
@@ -528,36 +450,31 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
         }
     };
 
-    // The patterns of one labelling: the classes of its index that recur at
-    // least kappa times there, as (class, recurrence). Recurrence never exceeds
-    // frequency, so rarer classes skip the greedy.
+    // The patterns of one labelling: the classes of its index that hold at
+    // least tau labels and occur at least kappa times there, as
+    // (class, frequency).
     auto patterns_of = [&](const CompositionIndex& index) {
-        const int k = index.size();
-        std::vector<int> r(k, 0);
-        parallel_for(k, config.threads, [&](const int lo, const int hi) {
-            GreedyScratch w(n_cells);
-            for (int cls = lo; cls < hi; ++cls) {
-                index.class_occurrences(cls, w.hits, w.rows);
-                if (static_cast<int>(w.rows.size()) >= kappa) r[cls] = greedy_recurrence(w.rows, neighbors, w);
-            }
-        });
+        const std::vector<int> f = index.class_frequencies(config.threads);
         std::vector<std::pair<int, int>> patterns;
-        for (int cls = 0; cls < k; ++cls) {
-            if (r[cls] >= kappa) patterns.emplace_back(cls, r[cls]);
+        for (int cls = 0; cls < index.size(); ++cls) {
+            if (f[cls] >= kappa && support(index.pattern(cls), n_labels) >= tau) {
+                patterns.emplace_back(cls, f[cls]);
+            }
         }
         return patterns;
     };
 
     // Pass 1: the universe, every pattern of every labelling. Every count
-    // vector recurs at least once on its own labelling, so kappa = 1 needs no
-    // recurrences here.
+    // vector occurs at least once on its own labelling, so kappa = 1 needs no
+    // frequencies here.
     PatternUniverse universe;
     auto pass_start = Clock::now();
     for_each_labelling("patterns", [&](int, const std::vector<int>& histograms) {
         if (kappa == 1) {
             const CompositionClasses classes = composition_classes(histograms, n_cells, n_labels);
             for (int c = 0; c < static_cast<int>(classes.multiplicities.size()); ++c) {
-                universe.intern(row_of(classes.rows, c, n_labels), n_labels);
+                const int* row = row_of(classes.rows, c, n_labels);
+                if (support(row, n_labels) >= tau) universe.intern(row, n_labels);
             }
             return;
         }
@@ -572,30 +489,25 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     const std::vector<double> points = config.rho > 0.0
         ? normalized_rows(universe.rows, n_universe, n_labels)
         : std::vector<double>(static_cast<std::size_t>(n_universe) * n_labels, 0.0);
-    auto recurrence = [&](const CompositionIndex& index, const int c, GreedyScratch& w) {
-        index.occurrences(keys[c], row_of(points, c, n_labels), w.hits, w.rows);
-        return greedy_recurrence(w.rows, neighbors, w);
-    };
 
-    // Pass 2: the recurrence of every pattern of U on every labelling, kept as
+    // Pass 2: the frequency of every pattern of U on every labelling, kept as
     // sums for the mean and standard deviation over the m+1 labellings.
     std::vector<long long> sum(n_universe, 0), sum_sq(n_universe, 0);
     pass_start = Clock::now();
-    for_each_labelling("recurrences", [&](int, const std::vector<int>& histograms) {
+    for_each_labelling("frequencies", [&](int, const std::vector<int>& histograms) {
         const CompositionIndex index(histograms, n_cells, n_labels, config.rho);
         parallel_for(n_universe, config.threads, [&](const int lo, const int hi) {
-            GreedyScratch w(n_cells);
             for (int c = lo; c < hi; ++c) {
-                const long long r = recurrence(index, c, w);
-                sum[c] += r;
-                sum_sq[c] += r * r;
+                const long long f = index.frequency(keys[c], row_of(points, c, n_labels));
+                sum[c] += f;
+                sum_sq[c] += f * f;
             }
         });
     });
-    const double recurrence_seconds = elapsed_seconds(pass_start);
-    auto score = [&](const int c, const long long r) {
-        return Score{pool * r - sum[c],
-                     static_cast<__int128>(pool) * sum_sq[c] - static_cast<__int128>(sum[c]) * sum[c]};
+    const double frequency_seconds = elapsed_seconds(pass_start);
+    auto score = [&](const int c, const long long f) {
+        return Score{pool * f - sum[c],
+                     static_cast<Int128>(pool) * sum_sq[c] - static_cast<Int128>(sum[c]) * sum[c]};
     };
 
     // Pass 3: each labelling's best score over its own patterns, and the
@@ -633,8 +545,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
                 index.class_occurrences(cls, hits, rows);
                 Pattern& p = observed[a];
                 p.counts.assign(index.pattern(cls), index.pattern(cls) + n_labels);
-                p.frequency = static_cast<int>(rows.size());
-                p.recurrence = patterns[a].second;
+                p.frequency = patterns[a].second;
                 p.z_score = z[a].value();
                 describe_occurrences(histograms, rows, n_labels, p);
             }
@@ -644,8 +555,8 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
     int at_ceiling = 0;
     for (int j = 0; j < pool; ++j) {
         // z = sqrt(m) exactly when num^2 == m spread.
-        const auto magnitude = static_cast<__int128>(best[j].num) * best[j].num;
-        if (has_best[j] && best[j].sign() > 0 && magnitude == static_cast<__int128>(m) * best[j].spread) {
+        const auto magnitude = static_cast<Int128>(best[j].num) * best[j].num;
+        if (has_best[j] && best[j].sign() > 0 && magnitude == static_cast<Int128>(m) * best[j].spread) {
             ++at_ceiling;
         }
     }
@@ -661,7 +572,7 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
                                                     : -std::numeric_limits<double>::infinity());
     }
     result.universe_seconds = universe_seconds;
-    result.recurrence_seconds = recurrence_seconds;
+    result.frequency_seconds = frequency_seconds;
     result.score_seconds = score_seconds;
     std::vector<int> order(observed.size());
     std::iota(order.begin(), order.end(), 0);

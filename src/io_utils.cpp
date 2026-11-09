@@ -114,7 +114,8 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "labels", data.label_names.size());
     write_field(os, separator, "radius", config.radius);
     write_field(os, separator, "rho", config.rho);
-    write_field(os, separator, "min_recurrence", config.min_recurrence);
+    write_field(os, separator, "min_labels", config.min_labels);
+    write_field(os, separator, "min_frequency", config.min_frequency);
     write_field(os, separator, "tile_size", config.tile_size);
     write_field(os, separator, "permutations", config.permutations);
     write_field(os, separator, "seed", config.seed);
@@ -126,7 +127,7 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "load_seconds", timings.load_seconds);
     write_field(os, separator, "analysis_seconds", timings.analysis_seconds);
     write_field(os, separator, "universe_seconds", result.universe_seconds);
-    write_field(os, separator, "recurrence_seconds", result.recurrence_seconds);
+    write_field(os, separator, "frequency_seconds", result.frequency_seconds);
     write_field(os, separator, "score_seconds", result.score_seconds);
     write_field(os, separator, "output_seconds", timings.output_seconds);
     write_field(os, separator, "total_seconds", timings.total_seconds);
@@ -250,15 +251,14 @@ void write_outputs(const std::string& out_dir, const Dataset& data, const Result
     {
         // Every pattern of the observed tissue, highest z first.
         std::ofstream f = open_output_file(out_dir, "patterns.csv");
-        f << "rank,pattern,frequency,recurrence,z_score,p_value,significant,"
+        f << "rank,pattern,frequency,z_score,p_value,significant,"
              "mean_cells,mean_composition\n";
         f << std::setprecision(12);
         for (int i = 0; i < static_cast<int>(result.patterns.size()); ++i) {
             const Pattern& pattern = result.patterns[i];
             f << i + 1 << ',';
             write_pattern_string(f, data, pattern.counts);
-            f << ',' << pattern.frequency << ',' << pattern.recurrence << ','
-              << pattern.z_score << ',' << pattern.p_value << ','
+            f << ',' << pattern.frequency << ',' << pattern.z_score << ',' << pattern.p_value << ','
               << (pattern.significant ? "true" : "false") << ',' << pattern.mean_cells << ',';
             write_composition_string(f, data, pattern.mean_composition);
             f << '\n';

@@ -8,9 +8,9 @@ Writes a figure, and a CSV with the same numbers beside it:
 
 * each run's time split into its phases: loading the input, setting up
   (neighbourhoods, tiles, p-values), the three passes over the m+1 labellings
-  (the universe of patterns, their recurrences, the scores) and the output;
+  (the universe of patterns, their frequencies, the scores) and the output;
 * seconds per labelling against the number of cells and against the size of
-  the universe, which the recurrence pass scales with.
+  the universe, which the frequency pass scales with.
 
 With one run the figure goes to RUN_DIR/plots/runtime.png; with several, to
 runtime.png in the current directory unless --out says otherwise.
@@ -35,7 +35,7 @@ PHASE_NAMES = {
     "load_seconds": "load input",
     "setup_seconds": "set-up",
     "universe_seconds": "pass 1: universe",
-    "recurrence_seconds": "pass 2: recurrences",
+    "pass2_seconds": "pass 2: frequencies",
     "score_seconds": "pass 3: scores",
     "output_seconds": "write output",
 }
@@ -61,17 +61,20 @@ def gather(paths: list[Path]) -> pd.DataFrame:
             "labels": n("labels"),
             "radius": n("radius"),
             "rho": n("rho"),
-            "min_recurrence": n("min_recurrence"),
+            "min_labels": n("min_labels", 0),
+            "min_frequency": n("min_frequency", n("min_recurrence")),
             "permutations": n("permutations"),
             "threads": n("threads"),
             "observed_patterns": n("observed_patterns"),
             "universe_size": n("universe_size"),
             "significant_patterns": n("significant_patterns"),
             **{key: n(key) for key in ["load_seconds", "analysis_seconds", "universe_seconds",
-                                       "recurrence_seconds", "score_seconds", "output_seconds",
+                                       "score_seconds", "output_seconds",
                                        "total_seconds"]},
         }
-        passes = row["universe_seconds"] + row["recurrence_seconds"] + row["score_seconds"]
+        # Pass 2 counted recurrences in runs from before the frequency statistic.
+        row["pass2_seconds"] = n("frequency_seconds", n("recurrence_seconds"))
+        passes = row["universe_seconds"] + row["pass2_seconds"] + row["score_seconds"]
         # Runs from before the pass timings count all their analysis as set-up.
         row["setup_seconds"] = (row["analysis_seconds"] - passes if np.isfinite(passes)
                                 else row["analysis_seconds"])
@@ -155,7 +158,7 @@ def main() -> None:
     scaling(fig.add_subplot(grid[2]), table, "universe_size", "universe size |U|")
 
     total = table["total_seconds"].sum()
-    share = table["recurrence_seconds"].sum() / table["analysis_seconds"].sum()
+    share = table["pass2_seconds"].sum() / table["analysis_seconds"].sum()
     note = f", {share:.0%} of the analysis in pass 2" if np.isfinite(share) else ""
     fig.suptitle(f"PaM-ST running time: {len(table)} run{'s' if len(table) > 1 else ''}, "
                  f"{readable(total)} in all{note}", x=0.01, ha="left", fontsize=12,

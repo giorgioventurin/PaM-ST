@@ -12,8 +12,9 @@ For each pattern it writes two figures to RUN_DIR/plots/:
 * occurrences_rank<N>_zoom.png: some occurrences up close, picked far apart
   (--zoom sets how many; 0 skips it).
 
-occurrences.csv lists the occurrences of significant patterns only. The y axis
-points down, as in the images the coordinates come from.
+occurrences.csv lists the occurrences of significant patterns only; those of
+any other pattern are found again from the input tables, by pam_st's rule. The
+y axis points down, as in the images the coordinates come from.
 """
 
 from __future__ import annotations
@@ -29,8 +30,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from pam_results import (DARK, FAINT, INK, MUTED, RED, label_colours, load_cells, load_run,
-                         output_path, parse_counts, pattern_title, short_names, use_style)
+from pam_results import (DARK, FAINT, INK, MUTED, RED, count_vectors, label_colours, load_cells,
+                         load_run, match_occurrences, output_path, parse_counts, pattern_title,
+                         short_names, use_style)
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,7 +144,7 @@ def overview(run, row, occ, cells, colours, path, dpi) -> None:
     for ax in axes.flat[len(names):]:
         ax.axis("off")
     fig.suptitle(f"Pattern #{row['rank']}: {pattern_title(row)}\n"
-                 f"frequency f = {row['frequency']}   recurrence R = {row['recurrence']}   "
+                 f"frequency f = {row['frequency']}   "
                  f"z = {row['z_score']:.2f}   p = {row['p_value']:.4g}   "
                  f"{len(occ)} occurrences, each circled in red",
                  x=0.02, ha="left", fontsize=12, fontweight="bold")
@@ -199,21 +201,23 @@ def main() -> None:
     use_style()
     run = load_run(args.run)
     ranks = chosen_ranks(run, args)
-    significant = run.patterns[run.patterns["significant"]]
-    cells = None
+    cells = load_cells(run, args.input)
+    vectors = None
     for rank in ranks:
         rows = run.patterns[run.patterns["rank"] == rank]
         if rows.empty:
             raise SystemExit(f"No pattern of rank {rank}: patterns.csv has ranks 1-{len(run.patterns)}.")
         row = rows.iloc[0]
+        counts = parse_counts(row["pattern"])
         occ = run.occurrences[run.occurrences["rank"] == rank]
         if occ.empty:
-            raise SystemExit(
-                f"Pattern #{rank} is not significant (p = {row['p_value']:.4g}), so occurrences.csv "
-                f"does not list its occurrences; the significant ones are ranks 1-{len(significant)}.")
-        if cells is None:
-            cells = load_cells(run, args.input)
-        counts = parse_counts(row["pattern"])
+            # Not significant, so not in occurrences.csv: find them here.
+            if vectors is None:
+                vectors = count_vectors(cells, run.number("radius"))
+            occ = match_occurrences(vectors, cells, counts, run.number("rho"))
+            if len(occ) != row["frequency"]:
+                print(f"Pattern #{rank}: found {len(occ)} occurrences, but patterns.csv says "
+                      f"f = {row['frequency']}; are these the run's input tables?")
         colours = label_colours(sorted(counts, key=lambda label: -counts[label]))
         out = output_path(run, f"occurrences_rank{rank}.png",
                           f"{args.out_dir}/occurrences_rank{rank}.png" if args.out_dir else None)

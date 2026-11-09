@@ -14,6 +14,7 @@ from pathlib import Path
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
+from scipy.spatial import cKDTree
 
 # Black text on white; colour only marks data. The categorical hues are the
 # first slots of the reference palette, which stay apart for every pair and
@@ -103,7 +104,9 @@ class Run:
             f"{int(self.number('labels'))} labels",
             f"r = {self.number('radius'):g}",
             f"ρ = {self.number('rho'):g}",
-            f"κ = {int(self.number('min_recurrence', 1))}",
+            f"τ = {int(self.number('min_labels', 0))}",
+            # Runs from before the frequency statistic thresholded the recurrence.
+            f"κ = {int(self.number('min_frequency', self.number('min_recurrence', 1)))}",
             f"L = {self.number('tile_size'):g}",
             f"m = {self.m}",
             f"α = {self.number('alpha'):g}",
@@ -196,6 +199,49 @@ def load_cells(run: Run, inputs: list[str] | None = None) -> dict[str, pd.DataFr
             name, copy = f"{path.stem}#{copy}", copy + 1
         cells[name] = frame
     return cells
+
+
+@dataclass
+class CountVectors:
+    """Every spot's count vector, normalised: row i of shares[name] holds the
+    share of each label among the cells within r of spot i of that sample."""
+    labels: list[str]
+    shares: dict[str, np.ndarray]
+
+
+def count_vectors(cells: dict[str, pd.DataFrame], radius: float) -> CountVectors:
+    labels = sorted({label for c in cells.values() for label in c["label"].unique()})
+    code = {label: k for k, label in enumerate(labels)}
+    shares = {}
+    for name, c in cells.items():
+        xy = c[["x", "y"]].to_numpy()
+        codes = c["label"].map(code).to_numpy()
+        neighbours = cKDTree(xy).query_ball_point(xy, radius)  # distance <= r, as pam_st
+        sizes = np.fromiter(map(len, neighbours), dtype=int, count=len(neighbours))
+        counts = np.zeros((len(xy), len(labels)))
+        np.add.at(counts, (np.repeat(np.arange(len(xy)), sizes), codes[np.concatenate(neighbours)]), 1)
+        shares[name] = counts / counts.sum(axis=1, keepdims=True)  # every spot counts itself
+    return CountVectors(labels, shares)
+
+
+def match_occurrences(vectors: CountVectors, cells: dict[str, pd.DataFrame],
+                      counts: dict[str, int], rho: float) -> pd.DataFrame:
+    """occ(v) found as pam_st finds it: the spots whose normalised count vector
+    lies within rho of the pattern's, in Euclidean distance, or equals it when
+    rho = 0. For the patterns occurrences.csv leaves out. Columns as there,
+    without rank."""
+    target = np.zeros(len(vectors.labels))
+    for label, n in counts.items():
+        target[vectors.labels.index(label)] = n
+    target /= target.sum()
+    found = []
+    for name, shares in vectors.shares.items():
+        gap = ((shares - target) ** 2).sum(axis=1)
+        spots = np.flatnonzero(gap <= rho ** 2 if rho > 0 else gap < 1e-18)
+        c = cells[name]
+        found.append(pd.DataFrame({"sample": name, "spot": spots,
+                                   "x": c["x"].to_numpy()[spots], "y": c["y"].to_numpy()[spots]}))
+    return pd.concat(found, ignore_index=True)
 
 
 def label_colours(labels: list[str]) -> dict[str, str]:
