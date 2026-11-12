@@ -590,19 +590,22 @@ Result run_pattern_test(const Dataset& data, const AnalysisConfig& config) {
         return observed_id[a] < observed_id[b];
     });
 
-    // The occurrences of the significant patterns, on the observed labelling.
+    // Only the significant patterns are reported, with their occurrences on
+    // the observed labelling. The other observed patterns are tested and
+    // dropped; the patterns of the drawn labellings only serve the test,
+    // through the best scores.
     const std::vector<int> observed_histograms =
         count_vectors(neighbors, data.labels, n_labels, config.threads);
     const CompositionIndex observed_index(observed_histograms, n_cells, n_labels, config.rho);
     std::vector<int> hits;
+    result.n_observed = static_cast<int>(observed.size());
     for (const int a : order) {
         Pattern& p = observed[a];
-        if (p.significant) {
-            observed_index.occurrences(keys[observed_id[a]], row_of(points, observed_id[a], n_labels),
-                                       hits, p.occurrences);
-            ++result.n_significant;
-        }
+        if (!p.significant) continue;
+        observed_index.occurrences(keys[observed_id[a]], row_of(points, observed_id[a], n_labels),
+                                   hits, p.occurrences);
         result.patterns.push_back(std::move(p));
     }
+    result.n_significant = static_cast<int>(result.patterns.size());
     return result;
 }

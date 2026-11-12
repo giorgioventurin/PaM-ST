@@ -58,8 +58,9 @@ struct Pattern {
 };
 
 struct Result {
-    std::vector<Pattern> patterns;  // P^(0), highest z first
+    std::vector<Pattern> patterns;  // the significant patterns of P^(0), highest z first
     int universe_size = 0;          // |U|: patterns of any labelling, up to scale
+    int n_observed = 0;             // |P^(0)|: every observed pattern is tested
     int n_significant = 0;
 
     // Every labelling j = 0..m, the observed one first: how many patterns it

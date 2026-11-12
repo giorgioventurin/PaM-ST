@@ -121,7 +121,7 @@ void write_run_metrics(std::ostream& os,
     write_field(os, separator, "seed", config.seed);
     write_field(os, separator, "alpha", config.alpha);
     write_field(os, separator, "threads", config.threads);
-    write_field(os, separator, "observed_patterns", result.patterns.size());
+    write_field(os, separator, "observed_patterns", result.n_observed);
     write_field(os, separator, "universe_size", result.universe_size);
     write_field(os, separator, "significant_patterns", result.n_significant);
     write_field(os, separator, "load_seconds", timings.load_seconds);
@@ -249,7 +249,9 @@ void write_outputs(const std::string& out_dir, const Dataset& data, const Result
     std::filesystem::create_directories(out_dir);
 
     {
-        // Every pattern of the observed tissue, highest z first.
+        // The significant patterns of the observed tissue, highest z first.
+        // significant is always true; the column stays so that older runs,
+        // which list every observed pattern, read the same way.
         std::ofstream f = open_output_file(out_dir, "patterns.csv");
         f << "rank,pattern,frequency,z_score,p_value,significant,"
              "mean_cells,mean_composition\n";
